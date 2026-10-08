@@ -11,6 +11,7 @@ import ModelsPage from './pages/ModelsPage.jsx'
 import AccountsPage from './pages/AccountsPage.jsx'
 import RoutingPage from './pages/RoutingPage.jsx'
 import LogsPage from './pages/LogsPage.jsx'
+import KeysPage from './pages/KeysPage.jsx'
 import { getClientConfig, getGatewayInfo, saveClientConfig } from './api.js'
 import {
   ChatIcon,
@@ -18,6 +19,7 @@ import {
   AccountsIcon,
   RoutingIcon,
   LogsIcon,
+  KeyIcon,
   SettingsIcon,
   CloseIcon,
   CheckIcon,
@@ -28,6 +30,7 @@ import { Button, Field, Input, Modal, Pill } from './components/ui.jsx'
 
 const TABS = [
   { id: 'chat', label: '对话', icon: ChatIcon },
+  { id: 'keys', label: 'API', icon: KeyIcon },
   { id: 'models', label: '模型', icon: ModelsIcon },
   { id: 'accounts', label: '账号', icon: AccountsIcon },
   { id: 'routing', label: '路由', icon: RoutingIcon },
@@ -35,7 +38,7 @@ const TABS = [
 ]
 
 export default function App() {
-  const [tab, setTab] = useState('chat')
+  const [tab, setTab] = useState('keys')
   const [toasts, setToasts] = useState([])
   const [showSettings, setShowSettings] = useState(false)
   const [gateway, setGateway] = useState(null)
@@ -57,8 +60,8 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
-      <div className="app-window relative flex overflow-hidden rounded-xl border border-line bg-surface">
+    <div className="flex h-screen w-full overflow-hidden bg-canvas">
+      <div className="app-window relative flex overflow-hidden bg-surface">
         {/* 左侧图标标签栏 */}
         <nav className="flex w-[64px] shrink-0 flex-col items-center border-r border-line bg-surface-2/70 py-3">
           <div className="mb-3 flex size-8 items-center justify-center rounded-lg bg-brand text-[13px] font-semibold text-white">
@@ -100,6 +103,7 @@ export default function App() {
         {/* 内容区 */}
         <main className="flex min-w-0 flex-1 flex-col bg-canvas">
           {tab === 'chat' && <ChatPage onToast={toast} />}
+          {tab === 'keys' && <KeysPage onToast={toast} />}
           {tab === 'models' && <ModelsPage onToast={toast} />}
           {tab === 'accounts' && <AccountsPage onToast={toast} />}
           {tab === 'routing' && <RoutingPage onToast={toast} />}

@@ -5,7 +5,15 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { getGatewayInfo, getModels, getPlatforms, getRoutingConfig, testPlatform } from '../api.js'
+import {
+  getGatewayInfo,
+  getModelCatalog,
+  getModels,
+  getPlatforms,
+  getRoutingConfig,
+  refreshModels,
+  testPlatform,
+} from '../api.js'
 import { ModelsIcon, RefreshIcon, ZapIcon, CheckIcon, LinkIcon } from '../components/icons.jsx'
 import { Button, Card, Empty, KV, PageHeader, Pill, Spinner } from '../components/ui.jsx'
 
@@ -23,22 +31,26 @@ export default function ModelsPage({ onToast }) {
   const [platforms, setPlatforms] = useState([])
   const [models, setModels] = useState([])
   const [config, setConfig] = useState(null)
+  const [catalog, setCatalog] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [testing, setTesting] = useState({})
 
   async function load() {
     setLoading(true)
     try {
-      const [i, p, m, c] = await Promise.all([
+      const [i, p, m, c, cat] = await Promise.all([
         getGatewayInfo(),
         getPlatforms(),
         getModels(),
         getRoutingConfig().catch(() => null),
+        getModelCatalog().catch(() => null),
       ])
       setInfo(i)
       setPlatforms(p?.platforms || [])
       setModels(m?.data || [])
       setConfig(c)
+      setCatalog(cat)
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {
@@ -50,6 +62,25 @@ export default function ModelsPage({ onToast }) {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function syncFromBase() {
+    setSyncing(true)
+    try {
+      const cat = await refreshModels()
+      setCatalog(cat)
+      const count = cat?.count || 0
+      if (cat?.source === 'base') {
+        onToast?.(`已从底座同步 ${count} 个模型`, 'success')
+      } else {
+        onToast?.(cat?.error || '底座不可达，沿用静态模型', 'error')
+      }
+      await load()
+    } catch (err) {
+      onToast?.(err.message, 'error')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   async function runTest(id) {
     setTesting((s) => ({ ...s, [id]: true }))
@@ -78,9 +109,14 @@ export default function ModelsPage({ onToast }) {
         title="模型配置"
         desc="查看已接入的平台与模型别名映射，测试平台连通性。"
         actions={
-          <Button icon={RefreshIcon} onClick={load} loading={loading}>
-            刷新
-          </Button>
+          <>
+            <Button icon={RefreshIcon} onClick={load} loading={loading}>
+              刷新
+            </Button>
+            <Button variant="primary" icon={RefreshIcon} onClick={syncFromBase} loading={syncing}>
+              同步底座模型
+            </Button>
+          </>
         }
       />
 
@@ -106,6 +142,9 @@ export default function ModelsPage({ onToast }) {
               />
               <InfoCell label="监听地址" value={`${info?.host || '-'}:${info?.port || '-'}`} />
             </Card>
+
+            {/* 动态模型目录 */}
+            <CatalogStrip catalog={catalog} syncing={syncing} onSync={syncFromBase} />
 
             {/* 平台卡片 */}
             <div>
@@ -179,6 +218,34 @@ export default function ModelsPage({ onToast }) {
   )
 }
 
+function CatalogStrip({ catalog, syncing, onSync }) {
+  const source = catalog?.source === 'base' ? 'base' : 'static'
+  const isBase = source === 'base'
+  const updated = catalog?.updated_at ? formatTime(catalog.updated_at) : '-'
+  return (
+    <Card className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+      <span className="flex items-center gap-1.5 text-[12px] font-medium text-ink-2">
+        <LinkIcon size={14} className="text-ink-3" />
+        动态模型目录
+      </span>
+      <Pill tone={isBase ? 'emerald' : 'orange'} dot>
+        {isBase ? '底座同步' : '静态配置'}
+      </Pill>
+      <span className="text-[12px] text-ink-3">
+        {isBase ? `已同步 ${catalog?.count || 0} 个真实模型` : '底座不可达，使用 platforms.json 内置模型'}
+      </span>
+      <span className="text-[11px] text-ink-3">更新于 {updated}</span>
+      {catalog?.error ? (
+        <span className="text-[11px] text-func-rose">{catalog.error}</span>
+      ) : null}
+      <div className="flex-1" />
+      <Button size="sm" variant="ghost" icon={RefreshIcon} onClick={onSync} loading={syncing}>
+        立即同步
+      </Button>
+    </Card>
+  )
+}
+
 function InfoCell({ label, value, tone = 'neutral' }) {
   return (
     <div className="px-3 py-1.5">
@@ -201,4 +268,10 @@ function SectionTitle({ icon: Icon, children }) {
       {children}
     </div>
   )
+}
+
+function formatTime(ts) {
+  if (!ts) return '-'
+  const d = new Date(ts * 1000)
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }

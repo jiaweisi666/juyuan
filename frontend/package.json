@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "聚源 AI 模型聚合网关 - 统一对话窗口与管理面板",
+  "description": "聚元 AI 模型聚合网关 - 统一对话窗口与管理面板",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

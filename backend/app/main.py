@@ -42,6 +42,16 @@ async def lifespan(app: FastAPI):
     get_registry()
     get_pool()
     get_router()
+
+    # 从底座 /v1/models 同步动态模型目录（底座不可达时静默沿用静态配置）
+    from .platforms.catalog import refresh as refresh_model_catalog
+
+    try:
+        snapshot = await refresh_model_catalog()
+        logger.info("动态模型目录: 来源=%s 数量=%s", snapshot.get("source"), snapshot.get("count"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("动态模型目录同步失败，沿用静态配置: %s", exc)
+
     logger.info("核心组件初始化完成，监听 %s:%s", settings.host, settings.port)
     try:
         yield

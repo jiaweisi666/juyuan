@@ -22,7 +22,7 @@ from ..schemas import (
     ChatMessage,
     new_id,
 )
-from .deps import require_api_key
+from .deps import AuthContext, require_api_key
 
 router = APIRouter(tags=["anthropic"])
 
@@ -61,8 +61,16 @@ def _to_internal(request: AnthropicRequest) -> ChatCompletionRequest:
     )
 
 
-@router.post("/v1/messages", dependencies=[Depends(require_api_key)])
-async def messages(request: AnthropicRequest):
+@router.post("/v1/messages")
+async def messages(request: AnthropicRequest, auth: AuthContext = Depends(require_api_key)):
+    if not auth.allows(request.model):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": f"当前 API Key 无权访问模型 {request.model}",
+                "type": "permission_error",
+            },
+        )
     gateway = get_gateway()
     internal = _to_internal(request)
 

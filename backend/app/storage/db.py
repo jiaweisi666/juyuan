@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS route_logs (
     candidates TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_route_logs_ts ON route_logs(ts);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    key_enc TEXT NOT NULL DEFAULT '',
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL DEFAULT '',
+    models TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL,
+    last_used_at REAL DEFAULT 0,
+    usage_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 """
 
 
@@ -378,6 +392,99 @@ class Database:
                 item["candidates"] = []
             result.append(item)
         return result
+
+    # ---- API Key ----
+    @staticmethod
+    def _key_row(row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        try:
+            item["models"] = json.loads(item.get("models") or "[]")
+        except json.JSONDecodeError:
+            item["models"] = []
+        item["enabled"] = bool(item.get("enabled"))
+        return item
+
+    def create_api_key(
+        self,
+        *,
+        key_id: str,
+        name: str,
+        key_enc: str,
+        key_hash: str,
+        key_prefix: str,
+        models: list[str],
+    ) -> dict[str, Any]:
+        self._execute(
+            """INSERT INTO api_keys
+               (id, name, key_enc, key_hash, key_prefix, models, enabled, created_at, last_used_at, usage_count)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                key_id,
+                name,
+                key_enc,
+                key_hash,
+                key_prefix,
+                json.dumps(models, ensure_ascii=False),
+                1,
+                time.time(),
+                0.0,
+                0,
+            ),
+        )
+        record = self.get_api_key(key_id)
+        assert record is not None
+        return record
+
+    def list_api_keys(self) -> list[dict[str, Any]]:
+        return [
+            self._key_row(r)
+            for r in self._query("SELECT * FROM api_keys ORDER BY created_at DESC")
+        ]
+
+    def count_api_keys(self) -> int:
+        row = self._query_one("SELECT COUNT(*) AS n FROM api_keys")
+        return int(row["n"]) if row else 0
+
+    def get_api_key(self, key_id: str) -> dict[str, Any] | None:
+        row = self._query_one("SELECT * FROM api_keys WHERE id = ?", (key_id,))
+        return self._key_row(row) if row else None
+
+    def find_api_key_by_hash(self, key_hash: str) -> dict[str, Any] | None:
+        row = self._query_one("SELECT * FROM api_keys WHERE key_hash = ?", (key_hash,))
+        return self._key_row(row) if row else None
+
+    def update_api_key(
+        self,
+        key_id: str,
+        *,
+        name: str | None = None,
+        models: list[str] | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any] | None:
+        if self.get_api_key(key_id) is None:
+            return None
+        if name is not None:
+            self._execute("UPDATE api_keys SET name = ? WHERE id = ?", (name, key_id))
+        if models is not None:
+            self._execute(
+                "UPDATE api_keys SET models = ? WHERE id = ?",
+                (json.dumps(models, ensure_ascii=False), key_id),
+            )
+        if enabled is not None:
+            self._execute(
+                "UPDATE api_keys SET enabled = ? WHERE id = ?", (1 if enabled else 0, key_id)
+            )
+        return self.get_api_key(key_id)
+
+    def delete_api_key(self, key_id: str) -> bool:
+        cur = self._execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+        return cur.rowcount > 0
+
+    def touch_api_key(self, key_id: str) -> None:
+        self._execute(
+            "UPDATE api_keys SET last_used_at = ?, usage_count = usage_count + 1 WHERE id = ?",
+            (time.time(), key_id),
+        )
 
 
 _db: Database | None = None

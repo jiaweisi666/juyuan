@@ -15,12 +15,37 @@ from pydantic import BaseModel
 from ..accounts.crypto import decrypt, mask
 from ..accounts.pool import get_pool
 from ..config import get_settings
+from ..platforms.catalog import refresh as refresh_model_catalog
+from ..platforms.catalog import snapshot as model_catalog_snapshot
+from ..platforms.loader import all_known_models, model_owner
 from ..platforms.registry import get_registry
 from ..router.engine import get_router
 from ..storage.db import get_database
 from .deps import require_admin
 
 router = APIRouter(prefix="/api", tags=["admin"], dependencies=[Depends(require_admin)])
+
+
+# --------------------------------------------------------------------------- #
+# 模型目录（随底座 /v1/models 动态迭代）
+# --------------------------------------------------------------------------- #
+@router.get("/models")
+async def list_models() -> dict:
+    """前端模型清单（含 AUTO），随底座模型自动迭代。"""
+    data = [{"id": "auto", "owned_by": "juyuan"}]
+    data += [{"id": m, "owned_by": model_owner(m)} for m in all_known_models()]
+    return {"data": data, "catalog": model_catalog_snapshot()}
+
+
+@router.get("/models/catalog")
+async def get_model_catalog() -> dict:
+    return model_catalog_snapshot()
+
+
+@router.post("/models/refresh")
+async def sync_model_catalog() -> dict:
+    """手动从底座同步模型清单（网页端迭代后可用）。"""
+    return await refresh_model_catalog(force=True)
 
 
 # --------------------------------------------------------------------------- #

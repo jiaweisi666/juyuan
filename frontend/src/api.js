@@ -67,7 +67,18 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
 
 /* ------------------------------ 系统 / 模型 ------------------------------ */
 export const getGatewayInfo = () => request('/api/gateway/info')
-export const getModels = () => request('/v1/models')
+// 前端管理面板走管理端模型清单（外部第三方请使用 /v1/models 携带 API Key）
+export const getModels = () => request('/api/models')
+export const getModelCatalog = () => request('/api/models/catalog')
+export const refreshModels = () => request('/api/models/refresh', { method: 'POST' })
+
+/* ------------------------------ API 密钥 -------------------------------- */
+export const getKeyMeta = () => request('/api/keys/meta')
+export const getApiKeys = () => request('/api/keys')
+export const createApiKey = (payload) => request('/api/keys', { method: 'POST', body: payload })
+export const updateApiKey = (id, payload) => request(`/api/keys/${id}`, { method: 'PUT', body: payload })
+export const deleteApiKey = (id) => request(`/api/keys/${id}`, { method: 'DELETE' })
+export const revealApiKey = (id) => request(`/api/keys/${id}/reveal`, { method: 'POST' })
 
 /* -------------------------------- 平台 ---------------------------------- */
 export const getPlatforms = () => request('/api/platforms')

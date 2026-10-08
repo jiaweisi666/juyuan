@@ -14,14 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..gateway.orchestrator import GatewayUnavailableError, get_gateway
-from ..platforms.loader import load_platform_definitions
+from ..platforms.loader import all_known_models, model_owner
 from ..schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ModelCard,
     ModelsResponse,
 )
-from .deps import require_api_key
+from .deps import AuthContext, require_api_key
 
 router = APIRouter(tags=["openai"])
 
@@ -30,8 +30,19 @@ def _sse(data: str) -> str:
     return f"data: {data}\n\n"
 
 
-@router.post("/v1/chat/completions", dependencies=[Depends(require_api_key)])
-async def chat_completions(request: ChatCompletionRequest):
+@router.post("/v1/chat/completions")
+async def chat_completions(
+    request: ChatCompletionRequest,
+    auth: AuthContext = Depends(require_api_key),
+):
+    if not auth.allows(request.model):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": f"当前 API Key 无权访问模型 {request.model}",
+                "type": "permission_error",
+            },
+        )
     gateway = get_gateway()
 
     if not request.stream:
@@ -56,11 +67,13 @@ async def chat_completions(request: ChatCompletionRequest):
     )
 
 
-@router.get("/v1/models", dependencies=[Depends(require_api_key)])
-async def list_models() -> ModelsResponse:
+@router.get("/v1/models")
+async def list_models(auth: AuthContext = Depends(require_api_key)) -> ModelsResponse:
     cards: list[ModelCard] = []
-    for definition in load_platform_definitions():
-        for model in definition.get("models", []):
-            cards.append(ModelCard(id=model, owned_by=definition.get("id", "juyuan")))
-    cards.append(ModelCard(id="auto", owned_by="juyuan"))
+    if auth.allows("auto"):
+        cards.append(ModelCard(id="auto", owned_by="juyuan"))
+    for model in all_known_models():
+        if not auth.allows(model):
+            continue
+        cards.append(ModelCard(id=model, owned_by=model_owner(model)))
     return ModelsResponse(data=cards)

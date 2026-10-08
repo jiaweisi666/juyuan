@@ -23,6 +23,7 @@ import httpx
 from ..logging_config import get_logger
 from ..schemas import ChatMessage
 from .base import ChatResult, PlatformError, PlatformPlugin, PluginState, StreamDelta
+from .loader import platform_models, resolve_variant_base_model
 from .mock import MockPlatformPlugin
 
 logger = get_logger(__name__)
@@ -47,9 +48,13 @@ class WebPlatformPlugin(PlatformPlugin):
 
     # ---- 内部工具 ----
     def _base_model(self, variant: str) -> str:
+        """解析变体对应的底座模型名（实时读取，兼容运行时动态发现的模型）。"""
+        resolved = resolve_variant_base_model(self.platform_id, variant)
+        if resolved:
+            return resolved
         variants = self._definition.get("variants", {})
         info = variants.get(variant) or {}
-        return str(info.get("base_model") or self.platform_id)
+        return str(info.get("base_model") or variant or self.platform_id)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -70,15 +75,13 @@ class WebPlatformPlugin(PlatformPlugin):
 
     # ---- PlatformPlugin ----
     def get_models(self) -> list[str]:
-        return list(self.supported_models)
+        models = platform_models(self.platform_id)
+        return models or list(self.supported_models)
 
     def switch_model(self, model: str) -> None:
-        variants = self._definition.get("variants", {})
+        """记录当前变体；未知变体按动态模型处理（base_model 即传入的模型名）。"""
         alias = model.split(":", 1)[1] if ":" in model else model
-        if alias in variants:
-            self._variant = alias
-        else:
-            self._variant = self._definition.get("default_variant", "default")
+        self._variant = alias or self._definition.get("default_variant", "default")
 
     async def chat(
         self,

@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from .. import __version__
 from ..config import get_settings
+from ..platforms.catalog import snapshot as model_catalog_snapshot
 from ..platforms.registry import get_registry
 from ..router.engine import get_router
 
@@ -33,4 +34,5 @@ async def gateway_info() -> dict:
         "weights": router_engine.weights,
         "platforms": registry.describe(),
         "base_web_api_url": settings.base_web_api_url,
+        "model_catalog": model_catalog_snapshot(),
     }

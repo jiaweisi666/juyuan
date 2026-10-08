@@ -1,0 +1,26 @@
+# ---- 版本控制与文档 ----
+.git
+.gitignore
+*.md
+_document_text.txt
+
+# ---- Python 缓存与虚拟环境 ----
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+backend/.venv/
+backend/.env
+
+# ---- 运行期数据（不打包进镜像，由卷挂载持久化）----
+backend/data/
+
+# ---- 前端依赖与产物（镜像内重新安装/构建）----
+frontend/node_modules/
+frontend/dist/
+
+# ---- 底座仓库（体积大；模拟适配器默认即可跑通，真实网页按需挂载）----
+vendor/
+
+# ---- 其他 ----
+**/.DS_Store
+**/Thumbs.db

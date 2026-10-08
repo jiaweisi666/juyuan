@@ -1,0 +1,133 @@
+{
+  "_comment": "内置平台定义与模型别名映射。model_aliases 将第三方请求的 model 字段映射到平台 + 网页端模型变体；platforms 描述各平台插件元信息，site_key 对齐底座 vendor/universal-web-api/config/sites.json 的站点域名。",
+  "model_aliases": {
+    "deepseek-chat": { "platform": "deepseek", "variant": "quick", "label": "DeepSeek Quick" },
+    "deepseek-reasoner": { "platform": "deepseek", "variant": "expert", "label": "DeepSeek 专家模式" },
+    "gpt-4o": { "platform": "chatgpt", "variant": "default", "label": "ChatGPT" },
+    "gpt-4o-mini": { "platform": "chatgpt", "variant": "default", "label": "ChatGPT" },
+    "claude-sonnet-4": { "platform": "claude", "variant": "sonnet", "label": "Claude Sonnet" },
+    "claude-opus-4": { "platform": "claude", "variant": "opus", "label": "Claude Opus" },
+    "kimi": { "platform": "kimi", "variant": "default", "label": "Kimi" },
+    "kimi-thinking": { "platform": "kimi", "variant": "thinking", "label": "Kimi 思考" },
+    "gemini-3.6-flash": { "platform": "gemini", "variant": "flash", "label": "Gemini Flash" },
+    "gemini-3.1-pro": { "platform": "gemini", "variant": "pro", "label": "Gemini Pro" },
+    "gemini-auto": { "platform": "gemini", "variant": "auto", "label": "Gemini Auto" },
+    "gemini-lite": { "platform": "gemini", "variant": "lite", "label": "Gemini Lite" },
+    "qwen-max": { "platform": "qwen", "variant": "default", "label": "通义千问" },
+    "doubao": { "platform": "doubao", "variant": "default", "label": "豆包" },
+    "glm-4": { "platform": "glm", "variant": "default", "label": "GLM" },
+    "auto": { "platform": "auto", "variant": "auto", "label": "智能路由 (AUTO)" }
+  },
+  "platforms": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "required": true,
+      "site_key": "chat.deepseek.com",
+      "homepage": "https://chat.deepseek.com",
+      "accent": "sky",
+      "variants": {
+        "quick": { "label": "Quick", "kind": "chat", "base_model": "deepseek-chat" },
+        "expert": { "label": "专家模式", "kind": "reasoner", "base_model": "deepseek-reasoner" }
+      },
+      "default_variant": "quick",
+      "models": ["deepseek-chat", "deepseek-reasoner"]
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "required": true,
+      "site_key": "chatgpt.com",
+      "homepage": "https://chatgpt.com",
+      "accent": "emerald",
+      "variants": {
+        "default": { "label": "默认", "kind": "chat", "base_model": "gpt-4o" }
+      },
+      "default_variant": "default",
+      "models": ["gpt-4o", "gpt-4o-mini"]
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "required": true,
+      "site_key": "claude.ai",
+      "homepage": "https://claude.ai",
+      "accent": "orange",
+      "variants": {
+        "sonnet": { "label": "Sonnet", "kind": "chat", "base_model": "claude-sonnet-4" },
+        "opus": { "label": "Opus", "kind": "chat", "base_model": "claude-opus-4" }
+      },
+      "default_variant": "sonnet",
+      "models": ["claude-sonnet-4", "claude-opus-4"]
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi",
+      "required": true,
+      "site_key": "www.kimi.com",
+      "homepage": "https://www.kimi.com",
+      "accent": "violet",
+      "variants": {
+        "default": { "label": "默认", "kind": "chat", "base_model": "kimi" },
+        "thinking": { "label": "思考模式", "kind": "reasoner", "base_model": "kimi-thinking" }
+      },
+      "default_variant": "default",
+      "models": ["kimi", "kimi-thinking"]
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "required": false,
+      "site_key": "gemini.google.com",
+      "homepage": "https://gemini.google.com",
+      "accent": "sky",
+      "variants": {
+        "flash": { "label": "Flash", "kind": "chat", "base_model": "gemini-3.6-flash" },
+        "pro": { "label": "Pro", "kind": "reasoner", "base_model": "gemini-3.1-pro" },
+        "auto": { "label": "Auto", "kind": "auto", "base_model": "gemini-auto" },
+        "lite": { "label": "Lite", "kind": "chat", "base_model": "gemini-lite" }
+      },
+      "default_variant": "flash",
+      "models": ["gemini-3.6-flash", "gemini-3.1-pro", "gemini-auto", "gemini-lite"]
+    },
+    {
+      "id": "qwen",
+      "name": "通义千问",
+      "required": false,
+      "site_key": "chat.qwen.ai",
+      "homepage": "https://chat.qwen.ai",
+      "accent": "violet",
+      "variants": {
+        "default": { "label": "默认", "kind": "chat", "base_model": "qwen-max" }
+      },
+      "default_variant": "default",
+      "models": ["qwen-max"]
+    },
+    {
+      "id": "doubao",
+      "name": "豆包",
+      "required": false,
+      "site_key": "www.doubao.com",
+      "homepage": "https://www.doubao.com",
+      "accent": "orange",
+      "variants": {
+        "default": { "label": "默认", "kind": "chat", "base_model": "doubao" }
+      },
+      "default_variant": "default",
+      "models": ["doubao"]
+    },
+    {
+      "id": "glm",
+      "name": "GLM",
+      "required": false,
+      "site_key": "chatglm.cn",
+      "homepage": "https://chatglm.cn",
+      "accent": "emerald",
+      "variants": {
+        "default": { "label": "默认", "kind": "chat", "base_model": "glm-4" }
+      },
+      "default_variant": "default",
+      "models": ["glm-4"]
+    }
+  ]
+}

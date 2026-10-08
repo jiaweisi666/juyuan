@@ -1,0 +1,41 @@
+# ============================================================
+# AI 模型聚合网关 —— 一键部署编排
+#   启动：docker compose up -d --build
+#   访问：http://127.0.0.1:8300
+# ============================================================
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: juyuan/gateway:latest
+    container_name: juyuan-gateway
+    restart: unless-stopped
+    ports:
+      # 仅绑定本机回环地址，落实「不提供公网默认部署方案」的安全约束；
+      # 如需局域网访问，改为 "0.0.0.0:8300:8300" 并自行评估风险。
+      - "127.0.0.1:8300:8300"
+    env_file:
+      # 从 backend/.env 读取所有 GATEWAY_* 配置；文件不存在时不报错
+      - path: backend/.env
+        required: false
+    environment:
+      # 容器内必须监听 0.0.0.0，由上面的端口映射限定仅本机可访问
+      GATEWAY_HOST: "0.0.0.0"
+      GATEWAY_PORT: "8300"
+      GATEWAY_DATA_DIR: "/app/backend/data"
+    volumes:
+      # 数据持久化：数据库 / 账号 / 密钥 / 路由配置
+      - ./backend/data:/app/backend/data
+      # 可选：启用真实网页自动化时，挂载底座以读取 sites.json 选择器
+      # - ./vendor/universal-web-api:/app/vendor/universal-web-api:ro
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8300/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

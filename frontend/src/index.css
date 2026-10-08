@@ -1,0 +1,213 @@
+@import "tailwindcss";
+
+/* -------------------------------------------------------------------------- */
+/* 设计令牌：Sky Blue 主色 + 中性背景 + 功能卡片色                            */
+/* 原则：无渐变、无阴影、无多余边框；只保留留白与分组线                        */
+/* -------------------------------------------------------------------------- */
+@theme {
+  --font-sans: "Roboto Variable", "Roboto", system-ui, -apple-system, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* 中性 */
+  --color-canvas: oklch(0.974 0.003 106);
+  --color-surface: oklch(0.996 0.0015 106);
+  --color-surface-2: oklch(0.984 0.002 106);
+  --color-line: oklch(0.918 0.004 106);
+  --color-line-strong: oklch(0.858 0.005 106);
+  --color-ink: oklch(0.252 0.01 106);
+  --color-ink-2: oklch(0.442 0.009 106);
+  --color-ink-3: oklch(0.602 0.007 106);
+
+  /* 主色：Sky Blue */
+  --color-brand: oklch(0.62 0.155 240);
+  --color-brand-ink: oklch(0.46 0.14 240);
+  --color-brand-soft: oklch(0.955 0.026 240);
+
+  /* 功能卡片色 */
+  --color-func-orange: oklch(0.7 0.17 55);
+  --color-func-orange-soft: oklch(0.962 0.032 62);
+  --color-func-violet: oklch(0.575 0.185 295);
+  --color-func-violet-soft: oklch(0.962 0.026 295);
+  --color-func-emerald: oklch(0.63 0.14 160);
+  --color-func-emerald-soft: oklch(0.962 0.032 160);
+  --color-func-rose: oklch(0.62 0.19 20);
+  --color-func-rose-soft: oklch(0.962 0.032 20);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* 统一滚动条：细、无背景块 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-3);
+  background-clip: content-box;
+}
+
+/* 应用窗口：880×580 (16:10) 桌面窗口感 */
+.app-window {
+  width: 880px;
+  height: 580px;
+  max-width: 100vw;
+  max-height: 100vh;
+}
+
+@media (max-width: 920px), (max-height: 620px) {
+  .app-window {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0 !important;
+    border: none !important;
+  }
+}
+
+/* Markdown 渲染基础样式 */
+.md {
+  font-size: 13px;
+  line-height: 1.62;
+  word-break: break-word;
+}
+.md > *:first-child {
+  margin-top: 0;
+}
+.md > *:last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0.4em 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0.9em 0 0.4em;
+}
+.md ul,
+.md ol {
+  margin: 0.4em 0;
+  padding-left: 1.25em;
+}
+.md li {
+  margin: 0.15em 0;
+}
+.md a {
+  color: var(--color-brand-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.75em;
+  border-left: 2px solid var(--color-line-strong);
+  color: var(--color-ink-2);
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.md :not(pre) > code {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 12px;
+}
+.md th,
+.md td {
+  border: 1px solid var(--color-line);
+  padding: 4px 8px;
+  text-align: left;
+}
+.md th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+}
+.md hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 0.9em 0;
+}
+
+/* 应用内简单动效 */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--color-brand);
+  animation: caret-blink 1s step-end infinite;
+}

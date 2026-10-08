@@ -1,0 +1,15 @@
+# ============================================
+# AI 模型聚合网关 - 后端依赖
+# Python: >=3.10
+# ============================================
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+cryptography>=42.0.0
+
+# ---- 可选：真实网页自动化（DrissionPage 桥接底座 universal-web-api）----
+# 默认不安装，模拟适配器即可跑通全链路；启用真实平台时再安装：
+#   pip install -r requirements-web.txt

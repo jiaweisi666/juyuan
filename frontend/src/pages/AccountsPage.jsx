@@ -7,15 +7,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   accountsHealthCheck,
+  autoImportAccounts,
   createAccount,
   deleteAccount,
   getAccounts,
   getPlatforms,
   importAccounts,
+  openLoginPage,
   updateAccount,
 } from '../api.js'
 import {
   AccountsIcon,
+  LinkIcon,
   PlusIcon,
   RefreshIcon,
   TrashIcon,
@@ -23,6 +26,7 @@ import {
   ShieldIcon,
   CheckIcon,
   SearchIcon,
+  ZapIcon,
 } from '../components/icons.jsx'
 import { Button, Card, Empty, Field, Input, Modal, PageHeader, Pill, Select, Textarea } from '../components/ui.jsx'
 
@@ -50,6 +54,7 @@ export default function AccountsPage({ onToast }) {
   const [form, setForm] = useState(emptyForm())
   const [showImport, setShowImport] = useState(false)
   const [importText, setImportText] = useState('')
+  const [showLoginPicker, setShowLoginPicker] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -88,6 +93,14 @@ export default function AccountsPage({ onToast }) {
   async function submitAdd() {
     if (!form.platform) {
       onToast?.('请选择平台', 'error')
+      return
+    }
+    if (!form.email.trim()) {
+      onToast?.('请填写邮箱 / 标识', 'error')
+      return
+    }
+    if (!form.session_key.trim() && !form.cookies.trim()) {
+      onToast?.('请至少填写 Session Key 或 Cookies 中的一项', 'error')
       return
     }
     setBusy(true)
@@ -161,6 +174,49 @@ export default function AccountsPage({ onToast }) {
     }
   }
 
+  // 按钮一：读取受控浏览器中已登录站点的 Cookie 并写入账号池（重复点击即刷新）
+  async function handleAutoImport() {
+    setBusy(true)
+    try {
+      const res = await autoImportAccounts()
+      const added = res?.added || 0
+      const updated = res?.updated || 0
+      const skipped = res?.skipped || 0
+      if (added + updated === 0) {
+        onToast?.(
+          '未发现已登录站点，请先「登录导入」或在受控浏览器中登录大模型官网后再试',
+          'error',
+        )
+      } else {
+        onToast?.(`自动导入完成：新增 ${added}，更新 ${updated}，跳过 ${skipped}`, 'success')
+      }
+      load()
+    } catch (err) {
+      onToast?.(err.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 按钮二：在受控浏览器中打开平台官方登录页，登录后回到「一键自动导入」即可
+  async function handleOpenLogin(platformId) {
+    setShowLoginPicker(false)
+    setBusy(true)
+    try {
+      const res = await openLoginPage(platformId)
+      onToast?.(
+        res?.success === false
+          ? '已尝试打开登录页，请确认受控浏览器已启动'
+          : '已打开官方登录页，登录完成后点击「一键自动导入」',
+        res?.success === false ? 'error' : 'success',
+      )
+    } catch (err) {
+      onToast?.(err.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col px-5 py-4">
       <PageHeader
@@ -171,8 +227,14 @@ export default function AccountsPage({ onToast }) {
             <Button icon={ShieldIcon} onClick={healthCheck} loading={busy}>
               体检
             </Button>
+            <Button icon={ZapIcon} onClick={handleAutoImport} loading={busy}>
+              一键自动导入
+            </Button>
+            <Button icon={LinkIcon} onClick={() => setShowLoginPicker(true)}>
+              登录导入
+            </Button>
             <Button icon={UploadIcon} onClick={() => setShowImport(true)}>
-              导入
+              手动导入
             </Button>
             <Button variant="primary" icon={PlusIcon} onClick={() => setShowAdd(true)}>
               新增账号
@@ -223,7 +285,7 @@ export default function AccountsPage({ onToast }) {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
-            <Empty icon={AccountsIcon} title="暂无账号" desc="点击「新增账号」或「导入」批量添加。" />
+            <Empty icon={AccountsIcon} title="暂无账号" desc="点击「一键自动导入」读取浏览器登录态，或「新增账号」手动添加。" />
           ) : (
             filtered.map((a) => {
               const meta = STATUS_META[a.status] || { tone: 'neutral', label: a.status }
@@ -279,7 +341,7 @@ export default function AccountsPage({ onToast }) {
         }
       >
         <div className="flex flex-col gap-3">
-          <Field label="平台">
+          <Field label="平台" required>
             <Select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
               <option value="">请选择平台</option>
               {platforms.map((p) => (
@@ -289,22 +351,31 @@ export default function AccountsPage({ onToast }) {
               ))}
             </Select>
           </Field>
-          <Field label="邮箱 / 标识">
+          <Field label="邮箱 / 标识" required>
             <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </Field>
-          <Field label="Session Key" hint="敏感字段，后端加密存储">
-            <Input
-              value={form.session_key}
-              onChange={(e) => setForm({ ...form, session_key: e.target.value })}
-            />
-          </Field>
-          <Field label="Cookies" hint="可粘贴 JSON 或原始 Cookie 字符串">
-            <Textarea
-              rows={3}
-              value={form.cookies}
-              onChange={(e) => setForm({ ...form, cookies: e.target.value })}
-            />
-          </Field>
+          <div className="flex flex-col gap-2">
+            <span className="text-[12px] font-medium text-ink-2">
+              凭据
+              <span className="ml-0.5 text-func-rose">*</span>
+              <span className="ml-1 text-[11px] font-normal text-ink-3">
+                Session Key 与 Cookies 至少填一项
+              </span>
+            </span>
+            <Field label="Session Key" hint="敏感字段，后端加密存储">
+              <Input
+                value={form.session_key}
+                onChange={(e) => setForm({ ...form, session_key: e.target.value })}
+              />
+            </Field>
+            <Field label="Cookies" hint="可粘贴 JSON 或原始 Cookie 字符串">
+              <Textarea
+                rows={3}
+                value={form.cookies}
+                onChange={(e) => setForm({ ...form, cookies: e.target.value })}
+              />
+            </Field>
+          </div>
           <Field label="备注">
             <Input value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} />
           </Field>
@@ -338,6 +409,39 @@ export default function AccountsPage({ onToast }) {
             onChange={(e) => setImportText(e.target.value)}
           />
         </Field>
+      </Modal>
+
+      {/* 登录导入：选择平台后在受控浏览器打开官方登录页 */}
+      <Modal
+        open={showLoginPicker}
+        title="登录导入"
+        onClose={() => setShowLoginPicker(false)}
+        width="440px"
+      >
+        <p className="mb-3 text-[12px] text-ink-3">
+          选择平台后将在受控浏览器中打开其官方登录页；完成登录后返回点击「一键自动导入」即可写入账号池。
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {platforms.length === 0 ? (
+            <Empty icon={LinkIcon} title="暂无可用平台" desc="请先在「模型」页确认平台清单。" />
+          ) : (
+            platforms.map((p) => (
+              <button
+                key={p.platform_id}
+                onClick={() => handleOpenLogin(p.platform_id)}
+                disabled={busy}
+                className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-left
+                  hover:border-brand-ink/40 hover:bg-surface-2 disabled:opacity-60"
+              >
+                <span className="text-[13px] text-ink">{p.display_name}</span>
+                <span className="flex items-center gap-1 text-[11px] text-ink-3">
+                  <LinkIcon size={12} />
+                  打开登录页
+                </span>
+              </button>
+            ))
+          )}
+        </div>
       </Modal>
     </div>
   )

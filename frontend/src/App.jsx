@@ -38,7 +38,7 @@ const TABS = [
 ]
 
 export default function App() {
-  const [tab, setTab] = useState('keys')
+  const [tab, setTab] = useState('chat')
   const [toasts, setToasts] = useState([])
   const [showSettings, setShowSettings] = useState(false)
   const [gateway, setGateway] = useState(null)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -17,7 +18,12 @@ from ..accounts.pool import get_pool
 from ..config import get_settings
 from ..platforms.catalog import refresh as refresh_model_catalog
 from ..platforms.catalog import snapshot as model_catalog_snapshot
-from ..platforms.loader import all_known_models, model_owner
+from ..platforms.loader import (
+    all_known_models,
+    get_platform_definition,
+    load_platform_definitions,
+    model_owner,
+)
 from ..platforms.registry import get_registry
 from ..router.engine import get_router
 from ..storage.db import get_database
@@ -162,6 +168,105 @@ async def accounts_health_check() -> dict:
     platforms = pool.store.platforms() or registry.ids()
     results = [await check(pid) for pid in platforms]
     return {"results": results}
+
+
+# --------------------------------------------------------------------------- #
+# 账号导入：从受控浏览器一键读取登录态（点击即实时读取）
+# --------------------------------------------------------------------------- #
+class OpenLoginRequest(BaseModel):
+    platform: str
+
+
+def _auto_identity(definition: dict[str, Any]) -> str:
+    """自动导入账号的去重标识（同一平台重复点击仅更新 Cookie）。"""
+    site = str(definition.get("site_key") or definition.get("id") or "").strip()
+    return f"auto@{site}"
+
+
+async def _base_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """调用底座（universal-web-api）本机 HTTP 接口。"""
+    base = (get_settings().base_web_api_url or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(status_code=503, detail={"message": "未配置底座地址（base_web_api_url）"})
+    headers: dict[str, str] = {}
+    api_key = (get_settings().base_web_api_key or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(f"{base}{path}", json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail={"message": f"底座不可达：{exc}"}) from exc
+    if resp.status_code == 503:
+        raise HTTPException(status_code=503, detail={"message": "受控浏览器未连接，请先启动底座浏览器"})
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail={"message": f"底座返回 {resp.status_code}"})
+    try:
+        return resp.json()
+    except ValueError:
+        return {}
+
+
+@router.post("/accounts/auto-import")
+async def auto_import_accounts() -> dict:
+    """扫描受控浏览器已登录的站点，读取 Cookie 写入账号池；重复点击即刷新 Cookie。"""
+    pool = get_pool()
+    store = pool.store
+    store.maybe_reload()
+
+    added = updated = skipped = 0
+    results: list[dict[str, Any]] = []
+    for definition in load_platform_definitions():
+        pid = str(definition.get("id") or "").strip()
+        homepage = str(definition.get("homepage") or "").strip()
+        if not pid or not homepage:
+            continue
+        try:
+            data = await _base_post("/api/browser/read-cookies", {"url": homepage})
+        except HTTPException as exc:
+            detail = exc.detail.get("message") if isinstance(exc.detail, dict) else str(exc.detail)
+            results.append({"platform": pid, "status": "error", "detail": detail})
+            continue
+        cookies = data.get("cookies") or []
+        count = int(data.get("count") or len(cookies))
+        if count <= 0:
+            results.append({"platform": pid, "status": "empty", "cookie_count": 0})
+            continue
+
+        identity = _auto_identity(definition)
+        current = next(
+            (a for a in store.all() if a.platform == pid and a.email.lower() == identity.lower()),
+            None,
+        )
+        if current is not None:
+            store.update(current.id, cookies=cookies)
+            updated += 1
+            results.append({"platform": pid, "status": "updated", "cookie_count": count})
+            continue
+        account, msg = store.add(
+            platform=pid, email=identity, cookies=cookies, remark="自动导入（浏览器登录态）"
+        )
+        if account is not None:
+            added += 1
+            results.append({"platform": pid, "status": "added", "cookie_count": count})
+        else:
+            skipped += 1
+            results.append({"platform": pid, "status": "skipped", "detail": msg, "cookie_count": count})
+
+    return {"added": added, "updated": updated, "skipped": skipped, "results": results}
+
+
+@router.post("/accounts/open-login")
+async def open_login_page(payload: OpenLoginRequest) -> dict:
+    """在受控浏览器中打开平台官方登录页，供用户登录后一键导入。"""
+    definition = get_platform_definition(payload.platform)
+    if definition is None:
+        raise HTTPException(status_code=404, detail={"message": f"平台不存在: {payload.platform}"})
+    homepage = str(definition.get("homepage") or "").strip()
+    if not homepage:
+        raise HTTPException(status_code=400, detail={"message": "该平台未配置登录页地址"})
+    data = await _base_post("/api/browser/open-url", {"url": homepage})
+    return {"success": bool(data.get("success")), "url": homepage}
 
 
 # --------------------------------------------------------------------------- #

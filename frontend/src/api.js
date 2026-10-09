@@ -93,6 +93,11 @@ export const deleteAccount = (id) => request(`/api/accounts/${id}`, { method: 'D
 export const importAccounts = (accounts) =>
   request('/api/accounts/import', { method: 'POST', body: { accounts } })
 export const accountsHealthCheck = () => request('/api/accounts/health-check', { method: 'POST' })
+// 从受控浏览器一键读取已登录站点 Cookie 并写入账号池（重复点击即刷新）
+export const autoImportAccounts = () => request('/api/accounts/auto-import', { method: 'POST' })
+// 在受控浏览器中打开平台官方登录页
+export const openLoginPage = (platform) =>
+  request('/api/accounts/open-login', { method: 'POST', body: { platform } })
 
 /* ------------------------------ 路由配置 -------------------------------- */
 export const getRoutingConfig = () => request('/api/routing/config')

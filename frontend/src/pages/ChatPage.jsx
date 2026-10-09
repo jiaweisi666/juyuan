@@ -278,7 +278,7 @@ export default function ChatPage({ onToast }) {
           ) : messages.length === 0 ? (
             <Empty
               icon={ChatIcon}
-              title="开始与聚合网关对话"
+              title="开始与聚元网关对话"
               desc="AUTO 模式会根据问题复杂度、延迟与成本，自动选择最合适的模型平台。"
             />
           ) : (

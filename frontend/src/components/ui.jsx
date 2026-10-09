@@ -75,10 +75,15 @@ export function Pill({ children, tone = 'neutral', dot = false, className = '' }
 }
 
 /* ------------------------------ 表单字段 -------------------------------- */
-export function Field({ label, hint, children, className = '' }) {
+export function Field({ label, hint, required = false, children, className = '' }) {
   return (
     <label className={`flex flex-col gap-1 ${className}`}>
-      {label ? <span className="text-[12px] font-medium text-ink-2">{label}</span> : null}
+      {label ? (
+        <span className="text-[12px] font-medium text-ink-2">
+          {label}
+          {required ? <span className="ml-0.5 text-func-rose">*</span> : null}
+        </span>
+      ) : null}
       {children}
       {hint ? <span className="text-[11px] text-ink-3">{hint}</span> : null}
     </label>

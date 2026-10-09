@@ -124,6 +124,7 @@ class AccountStore:
         email: str = "",
         session_key: str = "",
         cookies: dict[str, Any] | str = "",
+        storage: dict[str, Any] | str = "",
         remark: str = "",
     ) -> tuple[Account | None, str]:
         """新增账号，返回 (account, message)。重复则返回 (None, 原因)。"""
@@ -136,6 +137,9 @@ class AccountStore:
                 session_key_enc=crypto.encrypt(session_key),
                 cookies_enc=crypto.encrypt(
                     cookies if isinstance(cookies, str) else json.dumps(cookies, ensure_ascii=False)
+                ),
+                storage_enc=crypto.encrypt(
+                    storage if isinstance(storage, str) else json.dumps(storage, ensure_ascii=False)
                 ),
             )
             dup = self._dedup_keys(account) & self._existing_keys()
@@ -156,6 +160,7 @@ class AccountStore:
                 email=str(item.get("email", "")).strip(),
                 session_key=str(item.get("session_key") or item.get("sessionKey") or ""),
                 cookies=item.get("cookies") or "",
+                storage=item.get("storage") or item.get("local_storage") or "",
                 remark=str(item.get("remark", "")),
             )
             if account:
@@ -172,11 +177,16 @@ class AccountStore:
                 return None
             session_key = fields.pop("session_key", None)
             cookies = fields.pop("cookies", None)
+            storage = fields.pop("storage", None)
             if session_key is not None:
                 account.session_key_enc = crypto.encrypt(str(session_key))
             if cookies is not None:
                 account.cookies_enc = crypto.encrypt(
                     cookies if isinstance(cookies, str) else json.dumps(cookies, ensure_ascii=False)
+                )
+            if storage is not None:
+                account.storage_enc = crypto.encrypt(
+                    storage if isinstance(storage, str) else json.dumps(storage, ensure_ascii=False)
                 )
             for key in ("email", "remark", "platform", "status"):
                 if key in fields and fields[key] is not None:

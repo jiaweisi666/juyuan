@@ -99,6 +99,9 @@ export const openLoginPage = (platform) =>
 // 读取指定平台登录态并写入账号池（登录导入轮询用）
 export const readImportAccount = (platform) =>
   request('/api/accounts/read-import', { method: 'POST', body: { platform } })
+// 把账号池中的 Cookie 注入受控浏览器，使其直接进入登录态
+export const applyAccountLogin = (id) =>
+  request(`/api/accounts/${id}/apply`, { method: 'POST' })
 
 /* ------------------------------ 路由配置 -------------------------------- */
 export const getRoutingConfig = () => request('/api/routing/config')

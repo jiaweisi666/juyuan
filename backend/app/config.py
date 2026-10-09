@@ -103,6 +103,8 @@ class Settings:
     vendor_dir: str = "../vendor/universal-web-api"
     base_web_api_url: str = "http://127.0.0.1:8199"
     base_web_api_key: str = ""
+    # 受控浏览器 DevTools（CDP）HTTP 端点，用于网关侧直接注入登录态 Cookie
+    browser_debug_url: str = "http://127.0.0.1:9222"
     # 动态模型目录（底座 /v1/models）缓存有效秒数
     model_cache_ttl: int = 600
 
@@ -167,6 +169,7 @@ def _build_settings() -> Settings:
         vendor_dir=_env_str("GATEWAY_VENDOR_DIR", "../vendor/universal-web-api"),
         base_web_api_url=_env_str("GATEWAY_BASE_WEB_API_URL", "http://127.0.0.1:8199"),
         base_web_api_key=_env_str("GATEWAY_BASE_WEB_API_KEY", ""),
+        browser_debug_url=_env_str("GATEWAY_BROWSER_DEBUG_URL", "http://127.0.0.1:9222"),
         model_cache_ttl=_env_int("GATEWAY_MODEL_CACHE_TTL", 600),
     )
 

@@ -37,6 +37,7 @@ class Account:
     # 加密字段（密文）
     session_key_enc: str = ""
     cookies_enc: str = ""
+    storage_enc: str = ""
 
     status: AccountStatus = AccountStatus.ACTIVE
     call_count: int = 0
@@ -55,9 +56,11 @@ class Account:
         data = asdict(self)
         data.pop("session_key_enc", None)
         data.pop("cookies_enc", None)
+        data.pop("storage_enc", None)
         data["status"] = self.status.value
         data["masked_session"] = masked_session
         data["masked_cookies"] = masked_cookies
         data["has_session"] = bool(self.session_key_enc)
         data["has_cookies"] = bool(self.cookies_enc)
+        data["has_storage"] = bool(self.storage_enc)
         return data

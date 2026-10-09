@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   accountsHealthCheck,
+  applyAccountLogin,
   autoImportAccounts,
   createAccount,
   deleteAccount,
@@ -37,7 +38,7 @@ const STATUS_META = {
 }
 
 function emptyForm() {
-  return { platform: '', email: '', session_key: '', cookies: '', remark: '' }
+  return { platform: '', email: '', session_key: '', cookies: '', storage: '', remark: '' }
 }
 
 function sleep(ms) {
@@ -101,16 +102,42 @@ export default function AccountsPage({ onToast }) {
       onToast?.('请填写邮箱 / 标识', 'error')
       return
     }
-    if (!form.session_key.trim() && !form.cookies.trim()) {
-      onToast?.('请至少填写 Session Key 或 Cookies 中的一项', 'error')
+    if (!form.session_key.trim() && !form.cookies.trim() && !form.storage.trim()) {
+      onToast?.('请至少填写 Session Key、Cookies 或 localStorage 中的一项', 'error')
       return
     }
     setBusy(true)
     try {
-      await createAccount(form)
-      onToast?.('账号已添加', 'success')
+      const res = await createAccount(form)
+      if (res?.applied) {
+        onToast?.(
+          `账号已添加，登录态已注入受控浏览器（Cookie ${res.applied.cookie_count} / localStorage ${res.applied.storage_count}）`,
+          'success',
+        )
+      } else if (res?.apply_error) {
+        onToast?.(`账号已添加，但注入登录态失败：${res.apply_error}`, 'error')
+      } else {
+        onToast?.('账号已添加', 'success')
+      }
       setShowAdd(false)
       setForm(emptyForm())
+      load()
+    } catch (err) {
+      onToast?.(err.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 把账号池中的登录态（Cookie + localStorage）注入受控浏览器（让底座浏览器直接进入登录态）
+  async function applyLogin(a) {
+    setBusy(true)
+    try {
+      const res = await applyAccountLogin(a.id)
+      onToast?.(
+        `已向受控浏览器注入登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
+        'success',
+      )
       load()
     } catch (err) {
       onToast?.(err.message, 'error')
@@ -216,7 +243,10 @@ export default function AccountsPage({ onToast }) {
           return
         }
         if (res?.status === 'added' || res?.status === 'updated') {
-          onToast?.(`${platformId} 登录态已写入账号池`, 'success')
+          onToast?.(
+            `${platformId} 登录态已写入账号池（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}）`,
+            'success',
+          )
           load()
           return
         }
@@ -299,6 +329,10 @@ export default function AccountsPage({ onToast }) {
             filtered.map((a) => {
               const meta = STATUS_META[a.status] || { tone: 'neutral', label: a.status }
               const rate = a.call_count ? Math.round((a.success_count / a.call_count) * 100) : 0
+              const creds =
+                [a.has_cookies ? 'cookies' : '', a.has_storage ? 'localStorage' : '']
+                  .filter(Boolean)
+                  .join(' + ') || '无凭据'
               return (
                 <div
                   key={a.id}
@@ -308,7 +342,7 @@ export default function AccountsPage({ onToast }) {
                   <div className="min-w-0">
                     <div className="truncate text-[12px] text-ink">{a.email || '—'}</div>
                     <div className="truncate font-mono text-[11px] text-ink-3">
-                      {a.masked_session || (a.has_cookies ? 'cookies 已配置' : '无凭据')}
+                      {a.masked_session || creds}
                     </div>
                   </div>
                   <Pill tone={meta.tone} dot>
@@ -318,6 +352,11 @@ export default function AccountsPage({ onToast }) {
                     {a.call_count} / {rate}%
                   </span>
                   <div className="flex items-center justify-end gap-1">
+                    {(a.has_cookies || a.has_storage) && (
+                      <Button size="sm" variant="ghost" onClick={() => applyLogin(a)} disabled={busy}>
+                        应用登录态
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => toggleStatus(a)}>
                       {a.status === 'invalid' ? '启用' : '停用'}
                     </Button>
@@ -368,7 +407,7 @@ export default function AccountsPage({ onToast }) {
               凭据
               <span className="ml-0.5 text-func-rose">*</span>
               <span className="ml-1 text-[11px] font-normal text-ink-3">
-                Session Key 与 Cookies 至少填一项
+                Session Key / Cookies / localStorage 至少填一项
               </span>
             </span>
             <Field label="Session Key" hint="敏感字段，后端加密存储">
@@ -382,6 +421,13 @@ export default function AccountsPage({ onToast }) {
                 rows={3}
                 value={form.cookies}
                 onChange={(e) => setForm({ ...form, cookies: e.target.value })}
+              />
+            </Field>
+            <Field label="localStorage" hint="DeepSeek 等站点的登录态存于此；可粘贴 JSON 对象，如 {&quot;userToken&quot;:&quot;...&quot;}">
+              <Textarea
+                rows={3}
+                value={form.storage}
+                onChange={(e) => setForm({ ...form, storage: e.target.value })}
               />
             </Field>
           </div>

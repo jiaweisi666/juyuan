@@ -16,7 +16,9 @@ from pydantic import BaseModel
 
 from ..accounts.crypto import decrypt, mask
 from ..accounts.pool import get_pool
+from ..browser.cdp import CDPError, apply_login, read_local_storage
 from ..config import get_settings
+from ..logging_config import get_logger
 from ..platforms.catalog import refresh as refresh_model_catalog
 from ..platforms.catalog import snapshot as model_catalog_snapshot
 from ..platforms.loader import (
@@ -31,6 +33,8 @@ from ..storage.db import get_database
 from .deps import require_admin
 
 router = APIRouter(prefix="/api", tags=["admin"], dependencies=[Depends(require_admin)])
+
+logger = get_logger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +106,7 @@ class AccountCreate(BaseModel):
     email: str = ""
     session_key: str = ""
     cookies: dict[str, Any] | str = ""
+    storage: dict[str, Any] | str = ""
     remark: str = ""
 
 
@@ -111,6 +116,7 @@ class AccountUpdate(BaseModel):
     status: str | None = None
     session_key: str | None = None
     cookies: dict[str, Any] | str | None = None
+    storage: dict[str, Any] | str | None = None
 
 
 class AccountImport(BaseModel):
@@ -139,11 +145,24 @@ async def create_account(payload: AccountCreate) -> dict:
         email=payload.email,
         session_key=payload.session_key,
         cookies=payload.cookies,
+        storage=payload.storage,
         remark=payload.remark,
     )
     if account is None:
         raise HTTPException(status_code=409, detail={"message": msg})
-    return {"account": _public_account(account)}
+    response: dict[str, Any] = {"account": _public_account(account)}
+    # 手动填入登录态后，尽力注入受控浏览器，使平台立即可用
+    if account.cookies_enc or account.storage_enc:
+        definition = get_platform_definition(account.platform)
+        if definition is not None:
+            try:
+                response["applied"] = await _apply_login_to_browser(
+                    definition, decrypt(account.cookies_enc), decrypt(account.storage_enc)
+                )
+            except HTTPException as exc:
+                detail = exc.detail.get("message") if isinstance(exc.detail, dict) else str(exc.detail)
+                response["apply_error"] = detail
+    return response
 
 
 @router.put("/accounts/{account_id}")
@@ -203,19 +222,26 @@ def _auto_identity(definition: dict[str, Any]) -> str:
     return f"auto@{site}"
 
 
-def _upsert_auto_account(store, definition: dict[str, Any], cookies: Any) -> tuple[str, Any]:
-    """把某平台登录态 Cookie 写入账号池（已存在则更新）。返回 (状态, 账号)。"""
+def _upsert_auto_account(
+    store, definition: dict[str, Any], cookies: Any, storage: Any = None
+) -> tuple[str, Any]:
+    """把某平台登录态（Cookie + localStorage）写入账号池（已存在则更新）。返回 (状态, 账号)。"""
     pid = str(definition.get("id") or "").strip()
     identity = _auto_identity(definition)
     current = next(
         (a for a in store.all() if a.platform == pid and a.email.lower() == identity.lower()),
         None,
     )
+    extra: dict[str, Any] = {"storage": storage} if storage else {}
     if current is not None:
-        store.update(current.id, cookies=cookies)
+        store.update(current.id, cookies=cookies, **extra)
         return "updated", current
     account, _msg = store.add(
-        platform=pid, email=identity, cookies=cookies, remark="自动导入（浏览器登录态）"
+        platform=pid,
+        email=identity,
+        cookies=cookies,
+        storage=storage or "",
+        remark="自动导入（浏览器登录态）",
     )
     return ("added" if account is not None else "skipped"), account
 
@@ -271,7 +297,7 @@ async def auto_import_accounts() -> dict:
             results.append({"platform": pid, "status": "empty", "cookie_count": 0})
             continue
 
-        status, account = _upsert_auto_account(store, definition, cookies)
+        status, account = _upsert_auto_account(store, definition, cookies, await _read_browser_storage(definition))
         if status == "updated":
             updated += 1
         elif status == "added":
@@ -305,11 +331,13 @@ async def read_import_account(payload: OpenLoginRequest) -> dict:
     pool = get_pool()
     store = pool.store
     store.maybe_reload()
-    status, account = _upsert_auto_account(store, definition, cookies)
+    storage = await _read_browser_storage(definition)
+    status, account = _upsert_auto_account(store, definition, cookies, storage)
     return {
         "status": status,
         "platform": payload.platform,
         "cookie_count": len(cookies),
+        "storage_count": len(storage),
         "account": _public_account(account) if account is not None else None,
     }
 
@@ -325,6 +353,60 @@ async def open_login_page(payload: OpenLoginRequest) -> dict:
         raise HTTPException(status_code=400, detail={"message": "该平台未配置登录页地址"})
     data = await _base_post("/api/browser/open-url", {"url": homepage})
     return {"success": bool(data.get("success")), "url": homepage}
+
+
+# --------------------------------------------------------------------------- #
+# 登录态注入：把账号池 Cookie 写入受控浏览器（导入即登录）
+# --------------------------------------------------------------------------- #
+def _definition_host(definition: dict[str, Any]) -> str:
+    """平台站点域名（取自 site_key / homepage）。"""
+    raw = str(definition.get("site_key") or definition.get("homepage") or "").strip()
+    if "://" in raw:
+        raw = raw.split("://", 1)[1]
+    return raw.split("/", 1)[0].strip().lower()
+
+
+async def _read_browser_storage(definition: dict[str, Any]) -> dict[str, str]:
+    """读取受控浏览器中该平台标签页的 localStorage（用于登录导入落库）。"""
+    host = _definition_host(definition)
+    if not host:
+        return {}
+    try:
+        return await asyncio.to_thread(read_local_storage, host)
+    except CDPError as exc:
+        logger.warning("读取 %s localStorage 失败：%s", host, exc)
+        return {}
+
+
+async def _apply_login_to_browser(
+    definition: dict[str, Any], cookies: Any, storage: Any = None
+) -> dict[str, Any]:
+    """把某平台的登录态（Cookie + localStorage）注入受控浏览器对应标签页并刷新（CDP）。"""
+    host = _definition_host(definition)
+    if not host:
+        raise HTTPException(status_code=400, detail={"message": "该平台未配置站点域名"})
+    try:
+        return await asyncio.to_thread(apply_login, host, cookies=cookies, storage=storage)
+    except CDPError as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+
+
+@router.post("/accounts/{account_id}/apply")
+async def apply_account_login(account_id: str) -> dict:
+    """把指定账号的登录态（Cookie + localStorage）注入受控浏览器，使其直接进入登录态。"""
+    pool = get_pool()
+    account = pool.store.get(account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail={"message": "账号不存在"})
+    definition = get_platform_definition(account.platform)
+    if definition is None:
+        raise HTTPException(status_code=404, detail={"message": f"平台不存在: {account.platform}"})
+    cookies = decrypt(account.cookies_enc)
+    storage = decrypt(account.storage_enc)
+    if not cookies and not storage:
+        raise HTTPException(status_code=400, detail={"message": "该账号未配置登录态，无法应用到浏览器"})
+    result = await _apply_login_to_browser(definition, cookies, storage)
+    return {"success": True, "platform": account.platform, **result}
 
 
 # --------------------------------------------------------------------------- #

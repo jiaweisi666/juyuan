@@ -42,6 +42,9 @@ PLATFORM_HINTS: dict[str, list[str]] = {
     "glm": ["glm", "chatglm", "zhipu", "智谱"],
 }
 
+# 底座在「尚无任何已打开站点」时返回的通用占位模型名（不含真实平台信息）
+_GENERIC_BASE_MODELS = {"web-browser"}
+
 _STATE: dict[str, Any] = {"models": [], "synced": False}
 
 
@@ -122,8 +125,15 @@ async def refresh(*, force: bool = False) -> dict[str, Any]:
         resolved.append({"id": model_id, "platform": platform_id, "variant": variant})
 
     if not platforms:
-        mark_dynamic_refreshed(now, error="底座未返回可识别的模型")
-        logger.warning("底座返回 %d 个模型，但未能归因到任何平台", len(model_ids))
+        if not model_ids:
+            reason = "底座未返回任何模型"
+        elif set(model_ids) <= _GENERIC_BASE_MODELS:
+            # 底座仅返回通用占位（如 web-browser），说明受控浏览器里还没有已打开/已登录的站点
+            reason = "底座暂无已打开站点的模型，请先「登录导入」打开并登录站点后再同步"
+        else:
+            reason = f"底座返回的 {len(model_ids)} 个模型均无法归因到已接入平台"
+        mark_dynamic_refreshed(now, error=reason)
+        logger.warning("底座返回 %d 个模型，但未能归因到任何平台: %s", len(model_ids), model_ids[:5])
         return snapshot()
 
     set_dynamic_models(platforms)

@@ -33,33 +33,51 @@ export default function ModelsPage({ onToast }) {
   const [config, setConfig] = useState(null)
   const [catalog, setCatalog] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [platformsLoading, setPlatformsLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [testing, setTesting] = useState({})
 
-  async function load() {
-    setLoading(true)
+  // 核心信息（网关信息/模型清单/路由/目录）本地即可快速返回 → 先渲染页面
+  async function loadCore(showSpinner = true) {
+    if (showSpinner) setLoading(true)
     try {
-      const [i, p, m, c, cat] = await Promise.all([
+      const [i, m, c, cat] = await Promise.all([
         getGatewayInfo(),
-        getPlatforms(),
         getModels(),
         getRoutingConfig().catch(() => null),
         getModelCatalog().catch(() => null),
       ])
       setInfo(i)
-      setPlatforms(p?.platforms || [])
       setModels(m?.data || [])
       setConfig(c)
       setCatalog(cat)
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {
-      setLoading(false)
+      if (showSpinner) setLoading(false)
     }
   }
 
+  // 平台状态需逐个探测底座标签页，耗时较长 → 单独加载，不阻塞页面首屏
+  async function loadPlatforms() {
+    setPlatformsLoading(true)
+    try {
+      const p = await getPlatforms()
+      setPlatforms(p?.platforms || [])
+    } catch (err) {
+      onToast?.(err.message, 'error')
+    } finally {
+      setPlatformsLoading(false)
+    }
+  }
+
+  function load() {
+    return Promise.all([loadCore(), loadPlatforms()])
+  }
+
   useEffect(() => {
-    load()
+    loadCore()
+    loadPlatforms()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -68,13 +86,13 @@ export default function ModelsPage({ onToast }) {
     try {
       const cat = await refreshModels()
       setCatalog(cat)
-      const count = cat?.count || 0
+      await Promise.all([loadCore(false), loadPlatforms()])
       if (cat?.source === 'base') {
-        onToast?.(`已从底座同步 ${count} 个模型`, 'success')
+        onToast?.(`已从底座同步 ${cat?.count || 0} 个模型`, 'success')
       } else {
-        onToast?.(cat?.error || '底座不可达，沿用静态模型', 'error')
+        // 未同步成功多为「底座暂无已打开站点」等可预期情况，用提示而非报错
+        onToast?.(cat?.error || '底座不可达，沿用静态模型', 'info')
       }
-      await load()
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {
@@ -149,11 +167,17 @@ export default function ModelsPage({ onToast }) {
             </Card>
 
             {/* 动态模型目录 */}
-            <CatalogStrip catalog={catalog} syncing={syncing} onSync={syncFromBase} />
+            <CatalogStrip catalog={catalog} />
 
             {/* 平台卡片 */}
             <div>
               <SectionTitle icon={ModelsIcon}>接入平台（{platforms.length}）</SectionTitle>
+              {platformsLoading && platforms.length === 0 ? (
+                <Card className="flex items-center justify-center gap-2 py-6 text-[12px] text-ink-3">
+                  <Spinner size={16} />
+                  正在探测各平台状态…
+                </Card>
+              ) : (
               <div className="grid grid-cols-2 gap-2.5">
                 {platforms.map((p) => (
                   <Card key={p.platform_id} className="flex flex-col gap-2 p-3">
@@ -196,6 +220,7 @@ export default function ModelsPage({ onToast }) {
                   </Card>
                 ))}
               </div>
+              )}
             </div>
 
             {/* 模型别名映射 */}
@@ -226,7 +251,7 @@ export default function ModelsPage({ onToast }) {
   )
 }
 
-function CatalogStrip({ catalog, syncing, onSync }) {
+function CatalogStrip({ catalog }) {
   const source = catalog?.source === 'base' ? 'base' : 'static'
   const isBase = source === 'base'
   const updated = catalog?.updated_at ? formatTime(catalog.updated_at) : '-'
@@ -246,10 +271,6 @@ function CatalogStrip({ catalog, syncing, onSync }) {
       {catalog?.error ? (
         <span className="text-[11px] text-func-rose">{catalog.error}</span>
       ) : null}
-      <div className="flex-1" />
-      <Button size="sm" variant="ghost" icon={RefreshIcon} onClick={onSync} loading={syncing}>
-        立即同步
-      </Button>
     </Card>
   )
 }

@@ -262,7 +262,10 @@ async def _base_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail={"message": f"底座不可达：{exc}"}) from exc
     if resp.status_code == 503:
-        raise HTTPException(status_code=503, detail={"message": "受控浏览器未连接，请先启动底座浏览器"})
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "受控浏览器未连接：请确认受控浏览器已在 9222 端口运行后重试"},
+        )
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail={"message": f"底座返回 {resp.status_code}"})
     try:

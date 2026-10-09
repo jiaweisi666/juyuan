@@ -86,7 +86,12 @@ export default function ModelsPage({ onToast }) {
     setTesting((s) => ({ ...s, [id]: true }))
     try {
       const res = await testPlatform(id)
-      onToast?.(`${id} ${res?.healthy ? '连通正常' : '连通失败'}`, res?.healthy ? 'success' : 'error')
+      if (res?.healthy) {
+        onToast?.(`${id} 连通正常`, 'success')
+      } else {
+        onToast?.(`${id} 连通失败：${res?.reason || '未知原因'}`, 'error')
+      }
+      await load()
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {
@@ -185,6 +190,9 @@ export default function ModelsPage({ onToast }) {
                         测试
                       </Button>
                     </div>
+                    {p.health_reason ? (
+                      <p className="text-[11px] leading-snug text-func-rose">{p.health_reason}</p>
+                    ) : null}
                   </Card>
                 ))}
               </div>

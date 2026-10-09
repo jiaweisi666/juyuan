@@ -81,7 +81,8 @@ async def _fetch_base_models(timeout: float = 8.0) -> list[str]:
     headers: dict[str, str] = {}
     if settings.base_web_api_key:
         headers["Authorization"] = f"Bearer {settings.base_web_api_key}"
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    # 底座监听本机回环地址，禁用环境/系统代理，避免被本机代理（如 Clash）拦截转发出 502
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()
         data = resp.json()

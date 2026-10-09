@@ -7,6 +7,7 @@ admin_routes.py - 管理面板接口。
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -61,11 +62,19 @@ async def sync_model_catalog() -> dict:
 async def list_platforms() -> dict:
     registry = get_registry()
     pool = get_pool()
-    items = registry.describe()
     accounts = pool.store.all()
-    for item in items:
-        pid = item["platform_id"]
-        item["account_count"] = sum(1 for a in accounts if a.platform == pid)
+    plugins = list(registry.all())
+
+    # 并发探测真实状态（避免底座不可达时逐平台串行等待导致接口超时），消除「就绪假象」
+    await asyncio.gather(
+        *(plugin.health_check() for plugin in plugins), return_exceptions=True
+    )
+
+    items = []
+    for plugin in plugins:
+        item = plugin.describe()
+        item["account_count"] = sum(1 for a in accounts if a.platform == plugin.platform_id)
+        items.append(item)
     return {"platforms": items}
 
 
@@ -76,7 +85,13 @@ async def test_platform(platform_id: str) -> dict:
     if plugin is None:
         raise HTTPException(status_code=404, detail={"message": f"平台不存在: {platform_id}"})
     ok = await plugin.health_check()
-    return {"platform": platform_id, "healthy": ok, "adapter": plugin.describe().get("adapter")}
+    desc = plugin.describe()
+    return {
+        "platform": platform_id,
+        "healthy": ok,
+        "adapter": desc.get("adapter"),
+        "reason": desc.get("health_reason") or "",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -162,12 +177,17 @@ async def accounts_health_check() -> dict:
     async def check(platform_id: str) -> dict:
         plugin = registry.get(platform_id)
         if plugin is None:
-            return {"platform": platform_id, "healthy": False}
-        return {"platform": platform_id, "healthy": await plugin.health_check()}
+            return {"platform": platform_id, "healthy": False, "reason": "平台未注册"}
+        try:
+            healthy = await plugin.health_check()
+        except Exception as exc:  # noqa: BLE001
+            return {"platform": platform_id, "healthy": False, "reason": f"体检异常：{exc}"}
+        reason = "" if healthy else (plugin.describe().get("health_reason") or "")
+        return {"platform": platform_id, "healthy": healthy, "reason": reason}
 
     platforms = pool.store.platforms() or registry.ids()
-    results = [await check(pid) for pid in platforms]
-    return {"results": results}
+    results = await asyncio.gather(*(check(pid) for pid in platforms))
+    return {"results": list(results)}
 
 
 # --------------------------------------------------------------------------- #
@@ -183,6 +203,23 @@ def _auto_identity(definition: dict[str, Any]) -> str:
     return f"auto@{site}"
 
 
+def _upsert_auto_account(store, definition: dict[str, Any], cookies: Any) -> tuple[str, Any]:
+    """把某平台登录态 Cookie 写入账号池（已存在则更新）。返回 (状态, 账号)。"""
+    pid = str(definition.get("id") or "").strip()
+    identity = _auto_identity(definition)
+    current = next(
+        (a for a in store.all() if a.platform == pid and a.email.lower() == identity.lower()),
+        None,
+    )
+    if current is not None:
+        store.update(current.id, cookies=cookies)
+        return "updated", current
+    account, _msg = store.add(
+        platform=pid, email=identity, cookies=cookies, remark="自动导入（浏览器登录态）"
+    )
+    return ("added" if account is not None else "skipped"), account
+
+
 async def _base_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     """调用底座（universal-web-api）本机 HTTP 接口。"""
     base = (get_settings().base_web_api_url or "").strip().rstrip("/")
@@ -193,7 +230,8 @@ async def _base_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        # 底座监听本机回环地址，禁用环境/系统代理，避免被本机代理（如 Clash）拦截转发出 502
+        async with httpx.AsyncClient(timeout=20.0, trust_env=False) as client:
             resp = await client.post(f"{base}{path}", json=payload, headers=headers)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail={"message": f"底座不可达：{exc}"}) from exc
@@ -233,27 +271,47 @@ async def auto_import_accounts() -> dict:
             results.append({"platform": pid, "status": "empty", "cookie_count": 0})
             continue
 
-        identity = _auto_identity(definition)
-        current = next(
-            (a for a in store.all() if a.platform == pid and a.email.lower() == identity.lower()),
-            None,
-        )
-        if current is not None:
-            store.update(current.id, cookies=cookies)
+        status, account = _upsert_auto_account(store, definition, cookies)
+        if status == "updated":
             updated += 1
-            results.append({"platform": pid, "status": "updated", "cookie_count": count})
-            continue
-        account, msg = store.add(
-            platform=pid, email=identity, cookies=cookies, remark="自动导入（浏览器登录态）"
-        )
-        if account is not None:
+        elif status == "added":
             added += 1
-            results.append({"platform": pid, "status": "added", "cookie_count": count})
         else:
             skipped += 1
-            results.append({"platform": pid, "status": "skipped", "detail": msg, "cookie_count": count})
+        results.append({"platform": pid, "status": status, "cookie_count": count})
 
     return {"added": added, "updated": updated, "skipped": skipped, "results": results}
+
+
+@router.post("/accounts/read-import")
+async def read_import_account(payload: OpenLoginRequest) -> dict:
+    """读取指定平台登录态 Cookie 并写入账号池（登录导入轮询用）。
+
+    与 auto-import 的区别：只处理单一平台，且不依赖全量扫描；
+    供前端在「打开登录页 → 用户完成登录」后轮询，检测到登录态即自动落库。
+    """
+    definition = get_platform_definition(payload.platform)
+    if definition is None:
+        raise HTTPException(status_code=404, detail={"message": f"平台不存在: {payload.platform}"})
+    homepage = str(definition.get("homepage") or "").strip()
+    if not homepage:
+        raise HTTPException(status_code=400, detail={"message": "该平台未配置登录页地址"})
+
+    data = await _base_post("/api/browser/read-cookies", {"url": homepage})
+    cookies = data.get("cookies") or []
+    if not cookies:
+        return {"status": "empty", "platform": payload.platform, "cookie_count": 0}
+
+    pool = get_pool()
+    store = pool.store
+    store.maybe_reload()
+    status, account = _upsert_auto_account(store, definition, cookies)
+    return {
+        "status": status,
+        "platform": payload.platform,
+        "cookie_count": len(cookies),
+        "account": _public_account(account) if account is not None else None,
+    }
 
 
 @router.post("/accounts/open-login")

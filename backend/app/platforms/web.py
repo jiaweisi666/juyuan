@@ -28,6 +28,9 @@ from .mock import MockPlatformPlugin
 
 logger = get_logger(__name__)
 
+# 标签页 URL 命中以下片段即视为停留在登录/鉴权页（尚未完成登录）
+_LOGIN_PAGE_MARKERS = ("sign_in", "signin", "sign-in", "/login", "/auth", "passport", "sso")
+
 
 class WebPlatformPlugin(PlatformPlugin):
     """桥接 universal-web-api 底座的真实网页适配器。"""
@@ -40,10 +43,13 @@ class WebPlatformPlugin(PlatformPlugin):
         self._settings = settings
         self._variant = definition.get("default_variant", "default")
         self._available: bool | None = None
+        self._health_reason = ""
         self._mock = MockPlatformPlugin(definition, settings)
         self._client = httpx.AsyncClient(
             base_url=settings.base_web_api_url.rstrip("/"),
             timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0),
+            # 底座始终监听本机回环地址，禁用环境/系统代理，避免被本机代理（如 Clash）拦截转发出 502
+            trust_env=False,
         )
 
     # ---- 内部工具 ----
@@ -183,12 +189,74 @@ class WebPlatformPlugin(PlatformPlugin):
                     return
 
     async def health_check(self) -> bool:
+        """探测底座可达性 + 本平台标签页是否真正可用。
+
+        仅查底座 `/health` 会把「底座在线但标签页池为空 / 标签页停在未登录页」误判为就绪，
+        造成「全显示就绪但测试不可用」。这里进一步校验受控浏览器标签页池：
+        需存在匹配本平台站点域名、且未停留在登录页的标签页，否则视为不可用并记录原因。
+        """
+        self._health_reason = ""
         try:
-            resp = await self._client.get("/health")
-            self._available = resp.status_code < 500
-        except Exception:  # noqa: BLE001
+            resp = await self._client.get("/health", timeout=httpx.Timeout(8.0))
+            if resp.status_code >= 500:
+                self._available = False
+                self._health_reason = f"底座健康检查异常（HTTP {resp.status_code}）"
+                return False
+        except Exception as exc:  # noqa: BLE001
             self._available = False
-        return bool(self._available)
+            self._health_reason = f"底座不可达：{exc}"
+            return False
+
+        host = self._site_host()
+        try:
+            resp = await self._client.get("/api/tab-pool/tabs", timeout=httpx.Timeout(8.0))
+            resp.raise_for_status()
+            tabs = (resp.json() or {}).get("tabs") or []
+        except Exception as exc:  # noqa: BLE001
+            self._available = False
+            self._health_reason = f"查询受控浏览器标签页失败：{exc}"
+            return False
+
+        if not tabs:
+            self._available = False
+            self._health_reason = "受控浏览器暂无标签页，请先点击「登录导入」打开站点并完成登录"
+            return False
+
+        matched = [tab for tab in tabs if self._tab_matches(tab, host)]
+        if not matched:
+            self._available = False
+            self._health_reason = f"未找到 {host or '本平台'} 的标签页，请先在受控浏览器打开并登录该站点"
+            return False
+
+        if all(self._is_login_page(tab) for tab in matched):
+            self._available = False
+            self._health_reason = f"{host} 标签页停留在登录页，请先在受控浏览器完成登录"
+            return False
+
+        self._available = True
+        self._health_reason = ""
+        return True
+
+    def _site_host(self) -> str:
+        """本平台站点主机名（取自 site_key / homepage），用于匹配受控浏览器标签页。"""
+        raw = str(self._definition.get("site_key") or self._definition.get("homepage") or "").strip()
+        if "://" in raw:
+            raw = raw.split("://", 1)[1]
+        return raw.split("/", 1)[0].strip().lower()
+
+    def _tab_matches(self, tab: dict[str, Any], host: str) -> bool:
+        if not host:
+            return True
+        for key in ("current_domain", "route_domain", "url"):
+            value = str(tab.get(key) or "").strip().lower()
+            if value and host in value:
+                return True
+        return False
+
+    @staticmethod
+    def _is_login_page(tab: dict[str, Any]) -> bool:
+        url = str(tab.get("url") or "").strip().lower()
+        return any(marker in url for marker in _LOGIN_PAGE_MARKERS)
 
     def state(self) -> PluginState:
         if self._available is False:
@@ -201,6 +269,7 @@ class WebPlatformPlugin(PlatformPlugin):
         data["current_variant"] = self._variant
         data["required"] = bool(self._definition.get("required", False))
         data["base_web_api_url"] = self._settings.base_web_api_url
+        data["health_reason"] = self._health_reason
         return data
 
     async def aclose(self) -> None:

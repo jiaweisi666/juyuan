@@ -90,14 +90,15 @@ export const createAccount = (payload) => request('/api/accounts', { method: 'PO
 export const updateAccount = (id, payload) =>
   request(`/api/accounts/${id}`, { method: 'PUT', body: payload })
 export const deleteAccount = (id) => request(`/api/accounts/${id}`, { method: 'DELETE' })
-export const importAccounts = (accounts) =>
-  request('/api/accounts/import', { method: 'POST', body: { accounts } })
 export const accountsHealthCheck = () => request('/api/accounts/health-check', { method: 'POST' })
 // 从受控浏览器一键读取已登录站点 Cookie 并写入账号池（重复点击即刷新）
 export const autoImportAccounts = () => request('/api/accounts/auto-import', { method: 'POST' })
 // 在受控浏览器中打开平台官方登录页
 export const openLoginPage = (platform) =>
   request('/api/accounts/open-login', { method: 'POST', body: { platform } })
+// 读取指定平台登录态并写入账号池（登录导入轮询用）
+export const readImportAccount = (platform) =>
+  request('/api/accounts/read-import', { method: 'POST', body: { platform } })
 
 /* ------------------------------ 路由配置 -------------------------------- */
 export const getRoutingConfig = () => request('/api/routing/config')

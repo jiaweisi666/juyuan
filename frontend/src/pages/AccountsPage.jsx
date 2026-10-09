@@ -1,7 +1,7 @@
 /**
  * AccountsPage.jsx - 账号管理页。
  *
- * 账号池增删改、批量导入与连通性体检；敏感字段仅以掩码展示（密文存储于后端）。
+ * 账号池增删改、登录导入与连通性体检；敏感字段仅以掩码展示（密文存储于后端）。
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -12,8 +12,8 @@ import {
   deleteAccount,
   getAccounts,
   getPlatforms,
-  importAccounts,
   openLoginPage,
+  readImportAccount,
   updateAccount,
 } from '../api.js'
 import {
@@ -22,7 +22,6 @@ import {
   PlusIcon,
   RefreshIcon,
   TrashIcon,
-  UploadIcon,
   ShieldIcon,
   CheckIcon,
   SearchIcon,
@@ -41,6 +40,10 @@ function emptyForm() {
   return { platform: '', email: '', session_key: '', cookies: '', remark: '' }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export default function AccountsPage({ onToast }) {
   const [accounts, setAccounts] = useState([])
   const [summary, setSummary] = useState({ total: 0, active: 0, cooldown: 0, invalid: 0 })
@@ -52,9 +55,8 @@ export default function AccountsPage({ onToast }) {
 
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState(emptyForm())
-  const [showImport, setShowImport] = useState(false)
-  const [importText, setImportText] = useState('')
   const [showLoginPicker, setShowLoginPicker] = useState(false)
+  const [loginPolling, setLoginPolling] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -117,29 +119,6 @@ export default function AccountsPage({ onToast }) {
     }
   }
 
-  async function runImport() {
-    let items
-    try {
-      items = JSON.parse(importText)
-      if (!Array.isArray(items)) throw new Error('需为 JSON 数组')
-    } catch (err) {
-      onToast?.(`导入格式错误：${err.message}`, 'error')
-      return
-    }
-    setBusy(true)
-    try {
-      const res = await importAccounts(items)
-      onToast?.(`导入完成：新增 ${res.added}，跳过 ${res.skipped}`, 'success')
-      setShowImport(false)
-      setImportText('')
-      load()
-    } catch (err) {
-      onToast?.(err.message, 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function removeAccount(a) {
     if (!window.confirm(`确认删除账号 ${a.email || a.id}？`)) return
     try {
@@ -165,8 +144,20 @@ export default function AccountsPage({ onToast }) {
     setBusy(true)
     try {
       const res = await accountsHealthCheck()
-      const healthy = (res?.results || []).filter((r) => r.healthy).length
-      onToast?.(`连通性体检：${healthy}/${(res?.results || []).length} 个平台可用`, 'success')
+      const results = res?.results || []
+      const total = results.length
+      const healthy = results.filter((r) => r.healthy).length
+      if (total === 0) {
+        onToast?.('暂无账号，无需体检', 'error')
+      } else if (healthy === total) {
+        onToast?.(`连通性体检：${healthy}/${total} 个平台可用`, 'success')
+      } else {
+        const detail = results
+          .filter((r) => !r.healthy)
+          .map((r) => `${r.platform}（${r.reason || '原因未知'}）`)
+          .join('；')
+        onToast?.(`连通性体检：${healthy}/${total} 个平台可用；${detail}`, 'error')
+      }
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {
@@ -174,7 +165,7 @@ export default function AccountsPage({ onToast }) {
     }
   }
 
-  // 按钮一：读取受控浏览器中已登录站点的 Cookie 并写入账号池（重复点击即刷新）
+  // 扫描受控浏览器中已登录站点并写入账号池（弹窗内的「扫描全部」入口）
   async function handleAutoImport() {
     setBusy(true)
     try {
@@ -183,10 +174,7 @@ export default function AccountsPage({ onToast }) {
       const updated = res?.updated || 0
       const skipped = res?.skipped || 0
       if (added + updated === 0) {
-        onToast?.(
-          '未发现已登录站点，请先「登录导入」或在受控浏览器中登录大模型官网后再试',
-          'error',
-        )
+        onToast?.('未发现已登录站点，请在受控浏览器中登录大模型官网后再试', 'error')
       } else {
         onToast?.(`自动导入完成：新增 ${added}，更新 ${updated}，跳过 ${skipped}`, 'success')
       }
@@ -198,22 +186,44 @@ export default function AccountsPage({ onToast }) {
     }
   }
 
-  // 按钮二：在受控浏览器中打开平台官方登录页，登录后回到「一键自动导入」即可
-  async function handleOpenLogin(platformId) {
+  // 登录导入：打开官方登录页 → 轮询检测登录态 → 自动写入账号池
+  async function handleLoginImport(platformId) {
     setShowLoginPicker(false)
     setBusy(true)
     try {
       const res = await openLoginPage(platformId)
-      onToast?.(
-        res?.success === false
-          ? '已尝试打开登录页，请确认受控浏览器已启动'
-          : '已打开官方登录页，登录完成后点击「一键自动导入」',
-        res?.success === false ? 'error' : 'success',
-      )
+      if (res?.success === false) {
+        onToast?.('已尝试打开登录页，请确认受控浏览器已启动', 'error')
+        return
+      }
     } catch (err) {
       onToast?.(err.message, 'error')
+      return
     } finally {
       setBusy(false)
+    }
+
+    setLoginPolling(true)
+    onToast?.('已打开官方登录页，完成登录后将自动写入账号池', 'success')
+    try {
+      for (let i = 0; i < 40; i += 1) {
+        await sleep(3000)
+        let res
+        try {
+          res = await readImportAccount(platformId)
+        } catch (err) {
+          onToast?.(err.message, 'error')
+          return
+        }
+        if (res?.status === 'added' || res?.status === 'updated') {
+          onToast?.(`${platformId} 登录态已写入账号池`, 'success')
+          load()
+          return
+        }
+      }
+      onToast?.('未检测到登录态，请在受控浏览器完成登录后重试', 'error')
+    } finally {
+      setLoginPolling(false)
     }
   }
 
@@ -227,17 +237,16 @@ export default function AccountsPage({ onToast }) {
             <Button icon={ShieldIcon} onClick={healthCheck} loading={busy}>
               体检
             </Button>
-            <Button icon={ZapIcon} onClick={handleAutoImport} loading={busy}>
-              一键自动导入
-            </Button>
-            <Button icon={LinkIcon} onClick={() => setShowLoginPicker(true)}>
+            <Button
+              variant="primary"
+              icon={LinkIcon}
+              onClick={() => setShowLoginPicker(true)}
+              loading={busy || loginPolling}
+            >
               登录导入
             </Button>
-            <Button icon={UploadIcon} onClick={() => setShowImport(true)}>
-              手动导入
-            </Button>
-            <Button variant="primary" icon={PlusIcon} onClick={() => setShowAdd(true)}>
-              新增账号
+            <Button icon={PlusIcon} onClick={() => setShowAdd(true)}>
+              手动填入
             </Button>
           </>
         }
@@ -285,7 +294,7 @@ export default function AccountsPage({ onToast }) {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
-            <Empty icon={AccountsIcon} title="暂无账号" desc="点击「一键自动导入」读取浏览器登录态，或「新增账号」手动添加。" />
+            <Empty icon={AccountsIcon} title="暂无账号" desc="点击「登录导入」在受控浏览器登录后自动写入账号池，或「手动填入」添加。" />
           ) : (
             filtered.map((a) => {
               const meta = STATUS_META[a.status] || { tone: 'neutral', label: a.status }
@@ -326,10 +335,10 @@ export default function AccountsPage({ onToast }) {
         </div>
       </Card>
 
-      {/* 新增 */}
+      {/* 手动填入 */}
       <Modal
         open={showAdd}
-        title="新增账号"
+        title="手动填入"
         onClose={() => setShowAdd(false)}
         footer={
           <>
@@ -382,45 +391,25 @@ export default function AccountsPage({ onToast }) {
         </div>
       </Modal>
 
-      {/* 导入 */}
-      <Modal
-        open={showImport}
-        title="批量导入账号"
-        onClose={() => setShowImport(false)}
-        width="520px"
-        footer={
-          <>
-            <Button onClick={() => setShowImport(false)}>取消</Button>
-            <Button variant="primary" icon={UploadIcon} onClick={runImport} loading={busy}>
-              导入
-            </Button>
-          </>
-        }
-      >
-        <Field
-          label="账号 JSON 数组"
-          hint='示例：[{"platform":"deepseek","email":"a@b.com","session_key":"...","remark":"主号"}]'
-        >
-          <Textarea
-            rows={9}
-            className="font-mono text-[12px]"
-            placeholder='[{"platform":"deepseek","email":"...","session_key":"..."}]'
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-          />
-        </Field>
-      </Modal>
-
-      {/* 登录导入：选择平台后在受控浏览器打开官方登录页 */}
+      {/* 登录导入：选择平台后在受控浏览器打开官方登录页，登录后自动写入账号池 */}
       <Modal
         open={showLoginPicker}
         title="登录导入"
         onClose={() => setShowLoginPicker(false)}
-        width="440px"
+        width="460px"
       >
         <p className="mb-3 text-[12px] text-ink-3">
-          选择平台后将在受控浏览器中打开其官方登录页；完成登录后返回点击「一键自动导入」即可写入账号池。
+          选择平台后将在受控浏览器中打开其官方登录页；完成登录后会自动写入账号池。
         </p>
+        <button
+          onClick={handleAutoImport}
+          disabled={busy}
+          className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line
+            px-3 py-2 text-[12px] text-ink-2 hover:border-brand-ink/40 hover:bg-surface-2 disabled:opacity-60"
+        >
+          <ZapIcon size={13} />
+          扫描全部已登录站点
+        </button>
         <div className="flex flex-col gap-1.5">
           {platforms.length === 0 ? (
             <Empty icon={LinkIcon} title="暂无可用平台" desc="请先在「模型」页确认平台清单。" />
@@ -428,7 +417,7 @@ export default function AccountsPage({ onToast }) {
             platforms.map((p) => (
               <button
                 key={p.platform_id}
-                onClick={() => handleOpenLogin(p.platform_id)}
+                onClick={() => handleLoginImport(p.platform_id)}
                 disabled={busy}
                 className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-left
                   hover:border-brand-ink/40 hover:bg-surface-2 disabled:opacity-60"
@@ -436,7 +425,7 @@ export default function AccountsPage({ onToast }) {
                 <span className="text-[13px] text-ink">{p.display_name}</span>
                 <span className="flex items-center gap-1 text-[11px] text-ink-3">
                   <LinkIcon size={12} />
-                  打开登录页
+                  打开登录页并导入
                 </span>
               </button>
             ))

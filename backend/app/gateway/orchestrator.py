@@ -29,6 +29,7 @@ from ..schemas import (
     ChatMessage,
     RouteDecision,
     Usage,
+    message_text,
     new_id,
 )
 from ..storage.db import get_database
@@ -238,7 +239,7 @@ class Gateway:
                 )
 
         total_ms = int((time.perf_counter() - start) * 1000)
-        prompt_tokens = sum(_estimate_tokens(m.content or "") for m in request.messages)
+        prompt_tokens = sum(_estimate_tokens(message_text(m.content)) for m in request.messages)
         completion_tokens = usage.get("completion_tokens") or _estimate_tokens(full_text)
         usage.setdefault("prompt_tokens", prompt_tokens)
         usage.setdefault("completion_tokens", completion_tokens)
@@ -297,7 +298,7 @@ class Gateway:
             content, tool_calls = parse_tool_calls(full_text)
 
         prompt_tokens = usage.get("prompt_tokens") or sum(
-            _estimate_tokens(m.content or "") for m in request.messages
+            _estimate_tokens(message_text(m.content)) for m in request.messages
         )
         completion_tokens = usage.get("completion_tokens") or _estimate_tokens(full_text)
         final_usage = Usage(

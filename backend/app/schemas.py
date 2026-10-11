@@ -21,13 +21,50 @@ Role = Literal["system", "user", "assistant", "tool"]
 
 
 class ChatMessage(BaseModel):
-    """内部统一消息结构（OpenAI 风格）。"""
+    """内部统一消息结构（OpenAI 风格）。
+
+    content 兼容两种形态：纯字符串，或 OpenAI 多模态数组
+    （如 ``[{"type": "text", ...}, {"type": "image_url", ...}]``）。
+    数组形态会原样透传给底座（底座支持图片/音频/视频片段），
+    需要纯文本的场景请改用 message_text()。
+    """
 
     role: Role
-    content: str = ""
+    content: str | list[dict[str, Any]] | None = ""
     name: str | None = None
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
+
+
+def message_text(content: Any) -> str:
+    """把消息 content 规整为纯文本，兼容 OpenAI 多模态数组。
+
+    文本片段直接保留；图片/音频/视频等非文本片段以占位符表示，
+    避免多模态输入在 token 估算、任务分类等纯文本环节被误处理。
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+                continue
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "").strip().lower()
+            if block_type in {"image_url", "input_image", "output_image"}:
+                parts.append("[图片]")
+            elif block_type in {"audio_url", "input_audio", "output_audio"}:
+                parts.append("[音频]")
+            elif block_type in {"video_url", "input_video", "output_video"}:
+                parts.append("[视频]")
+            elif block.get("text"):
+                parts.append(str(block["text"]))
+        return "\n".join(part for part in parts if part)
+    return str(content)
 
 
 def new_id(prefix: str = "chatcmpl") -> str:

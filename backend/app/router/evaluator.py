@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..schemas import ChatMessage
+from ..schemas import ChatMessage, message_text
 
 
 class TaskType(str, Enum):
@@ -75,7 +75,7 @@ class QuestionEvaluation:
 
 
 def _collect_text(messages: list[ChatMessage]) -> str:
-    parts = [m.content or "" for m in messages if m.role in ("user", "system")]
+    parts = [message_text(m.content) for m in messages if m.role in ("user", "system")]
     return "\n".join(parts).strip()
 
 

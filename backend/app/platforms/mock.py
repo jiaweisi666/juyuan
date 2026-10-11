@@ -12,14 +12,14 @@ import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from ..schemas import ChatMessage
+from ..schemas import ChatMessage, message_text
 from .base import ChatResult, PlatformPlugin, PluginState, StreamDelta
 
 
 def _last_user_text(messages: list[ChatMessage]) -> str:
     for msg in reversed(messages):
         if msg.role == "user" and msg.content:
-            return msg.content
+            return message_text(msg.content)
     return ""
 
 
@@ -79,7 +79,7 @@ class MockPlatformPlugin(PlatformPlugin):
                 finished=True,
                 finish_reason="stop",
                 usage={
-                    "prompt_tokens": sum(len(m.content or "") for m in messages) // 2,
+                    "prompt_tokens": sum(len(message_text(m.content)) for m in messages) // 2,
                     "completion_tokens": completion_tokens,
                 },
             )
@@ -95,7 +95,7 @@ class MockPlatformPlugin(PlatformPlugin):
             finished=True,
             finish_reason="stop",
             usage={
-                "prompt_tokens": sum(len(m.content or "") for m in messages) // 2,
+                "prompt_tokens": sum(len(message_text(m.content)) for m in messages) // 2,
                 "completion_tokens": completion_tokens,
             },
         )

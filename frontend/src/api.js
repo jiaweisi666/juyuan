@@ -103,24 +103,24 @@ export const readImportAccount = (platform) =>
 export const applyAccountLogin = (id) =>
   request(`/api/accounts/${id}/apply`, { method: 'POST' })
 
-/* ------------------------------ 路由配置 -------------------------------- */
-export const getRoutingConfig = () => request('/api/routing/config')
-export const setRoutingConfig = (payload) =>
-  request('/api/routing/config', { method: 'PUT', body: payload })
-export const getRoutingWeights = () => request('/api/routing/weights')
-export const setRoutingWeights = (payload) =>
-  request('/api/routing/weights', { method: 'PUT', body: payload })
-export const getProfiles = () => request('/api/routing/profiles')
-export const getDecisions = (limit = 50) => request(`/api/routing/decisions?limit=${limit}`)
-export const submitFeedback = (payload) => request('/api/feedback', { method: 'POST', body: payload })
+/* ------------------------------ 路由配置（已屏蔽）------------------------ */
+// export const getRoutingConfig = () => request('/api/routing/config')
+// export const setRoutingConfig = (payload) =>
+//   request('/api/routing/config', { method: 'PUT', body: payload })
+// export const getRoutingWeights = () => request('/api/routing/weights')
+// export const setRoutingWeights = (payload) =>
+//   request('/api/routing/weights', { method: 'PUT', body: payload })
+// export const getProfiles = () => request('/api/routing/profiles')
+// export const getDecisions = (limit = 50) => request(`/api/routing/decisions?limit=${limit}`)
+// export const submitFeedback = (payload) => request('/api/feedback', { method: 'POST', body: payload })
 
-/* ------------------------------ 日志 / 统计 ----------------------------- */
-export const getLogs = ({ limit = 100, offset = 0, status = '', platform = '' } = {}) =>
-  request(
-    `/api/logs?limit=${limit}&offset=${offset}&status=${encodeURIComponent(status)}&platform=${encodeURIComponent(platform)}`,
-  )
-export const getStatsSummary = () => request('/api/stats/summary')
-export const getStatsSeries = (hours = 24) => request(`/api/stats/series?hours=${hours}`)
+/* ------------------------------ 日志 / 统计（已屏蔽）-------------------- */
+// export const getLogs = ({ limit = 100, offset = 0, status = '', platform = '' } = {}) =>
+//   request(
+//     `/api/logs?limit=${limit}&offset=${offset}&status=${encodeURIComponent(status)}&platform=${encodeURIComponent(platform)}`,
+//   )
+// export const getStatsSummary = () => request('/api/stats/summary')
+// export const getStatsSeries = (hours = 24) => request(`/api/stats/series?hours=${hours}`)
 
 /* -------------------------------- 会话 ---------------------------------- */
 export const listConversations = () => request('/api/chat/conversations')

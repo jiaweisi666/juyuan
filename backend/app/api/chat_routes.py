@@ -67,16 +67,12 @@ async def send(payload: SendPayload):
     if not conv_id or db.get_conversation(conv_id) is None:
         conv_id = db.create_conversation(payload.content[:24] or "新对话", payload.model)
 
-    # 组装历史 + 本次输入
-    history = db.get_conversation(conv_id) or {"messages": []}
-    messages = [
-        ChatMessage(role=m["role"], content=m["content"] or "")
-        for m in history.get("messages", [])
-    ]
-    messages.append(ChatMessage(role="user", content=payload.content))
+    # 仅发送当前消息，不把历史对话作为提示词发给底座
+    # （避免 deepseek 网页端每次开启新对话时重复收到完整历史）
+    messages = [ChatMessage(role="user", content=payload.content)]
     db.add_message(conv_id, "user", payload.content)
 
-    request = ChatCompletionRequest(model=payload.model, messages=messages, stream=True)
+    request = ChatCompletionRequest(model=payload.model, messages=messages, stream=True, conversation_id=conv_id)
 
     if not payload.stream:
         result = await gateway.complete(request)

@@ -105,6 +105,7 @@ class Gateway:
             "stop": request.stop,
             "tools": request.tools,
             "tool_choice": request.tool_choice,
+            "conversation_id": request.conversation_id,
         }
         try:
             async for delta in plugin.chat(messages, model_ref, stream=request.stream, **options):

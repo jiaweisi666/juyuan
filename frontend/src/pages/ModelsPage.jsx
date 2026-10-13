@@ -10,7 +10,6 @@ import {
   getModelCatalog,
   getModels,
   getPlatforms,
-  getRoutingConfig,
   refreshModels,
   testPlatform,
 } from '../api.js'
@@ -30,26 +29,23 @@ export default function ModelsPage({ onToast }) {
   const [info, setInfo] = useState(null)
   const [platforms, setPlatforms] = useState([])
   const [models, setModels] = useState([])
-  const [config, setConfig] = useState(null)
   const [catalog, setCatalog] = useState(null)
   const [loading, setLoading] = useState(true)
   const [platformsLoading, setPlatformsLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [testing, setTesting] = useState({})
 
-  // 核心信息（网关信息/模型清单/路由/目录）本地即可快速返回 → 先渲染页面
+  // 核心信息（网关信息/模型清单/目录）本地即可快速返回 → 先渲染页面
   async function loadCore(showSpinner = true) {
     if (showSpinner) setLoading(true)
     try {
-      const [i, m, c, cat] = await Promise.all([
+      const [i, m, cat] = await Promise.all([
         getGatewayInfo(),
         getModels(),
-        getRoutingConfig().catch(() => null),
         getModelCatalog().catch(() => null),
       ])
       setInfo(i)
       setModels(m?.data || [])
-      setConfig(c)
       setCatalog(cat)
     } catch (err) {
       onToast?.(err.message, 'error')
@@ -117,14 +113,17 @@ export default function ModelsPage({ onToast }) {
     }
   }
 
+  // auto 属路由模块，已停用；仅展示 DeepSeek 实际可用的模型别名
+  const visibleModels = useMemo(() => models.filter((m) => m.id !== 'auto'), [models])
+
   const grouped = useMemo(() => {
     const map = {}
-    for (const m of models) {
+    for (const m of visibleModels) {
       const key = m.owned_by || 'juyuan'
       ;(map[key] = map[key] || []).push(m.id)
     }
     return map
-  }, [models])
+  }, [visibleModels])
 
   return (
     <div className="flex h-full flex-col px-5 py-4">
@@ -151,17 +150,12 @@ export default function ModelsPage({ onToast }) {
         ) : (
           <div className="flex flex-col gap-4 pb-2">
             {/* 网关信息 */}
-            <Card className="grid grid-cols-4 divide-x divide-line px-1 py-2">
+            <Card className="grid grid-cols-3 divide-x divide-line px-1 py-2">
               <InfoCell label="版本" value={info?.version || '-'} />
               <InfoCell
                 label="适配器模式"
                 value={info?.real_browser_enabled ? '真实浏览器' : '模拟适配器'}
                 tone={info?.real_browser_enabled ? 'emerald' : 'orange'}
-              />
-              <InfoCell
-                label="AUTO 路由"
-                value={config?.auto_router_enabled ? '已开启' : '已关闭'}
-                tone={config?.auto_router_enabled ? 'emerald' : 'neutral'}
               />
               <InfoCell label="监听地址" value={`${info?.host || '-'}:${info?.port || '-'}`} />
             </Card>
@@ -225,7 +219,7 @@ export default function ModelsPage({ onToast }) {
 
             {/* 模型别名映射 */}
             <div>
-              <SectionTitle icon={LinkIcon}>模型别名映射（{models.length}）</SectionTitle>
+              <SectionTitle icon={LinkIcon}>模型别名映射（{visibleModels.length}）</SectionTitle>
               <Card className="divide-y divide-line">
                 {Object.entries(grouped).map(([owner, ids]) => (
                   <div key={owner} className="flex items-start gap-3 px-3 py-2">
@@ -241,7 +235,7 @@ export default function ModelsPage({ onToast }) {
                     </div>
                   </div>
                 ))}
-                {models.length === 0 ? <Empty title="暂无模型" /> : null}
+                {visibleModels.length === 0 ? <Empty title="暂无模型" /> : null}
               </Card>
             </div>
           </div>

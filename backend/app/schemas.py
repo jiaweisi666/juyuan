@@ -91,6 +91,7 @@ class ChatCompletionRequest(BaseModel):
     tools: list[dict[str, Any]] | None = None
     tool_choice: Any | None = None
     user: str | None = None
+    conversation_id: str | None = None
 
     model_config = {"extra": "allow"}
 

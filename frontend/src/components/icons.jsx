@@ -116,6 +116,12 @@ export const ChevronRightIcon = (p) => (
   </Icon>
 )
 
+export const ChevronLeftIcon = (p) => (
+  <Icon {...p}>
+    <path d="m15 6-6 6 6 6" />
+  </Icon>
+)
+
 export const SettingsIcon = (p) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="3" />
@@ -229,6 +235,14 @@ export const FilterIcon = (p) => (
     <path d="M4 6h16" />
     <path d="M7 12h10" />
     <path d="M10 18h4" />
+  </Icon>
+)
+
+export const SetupIcon = (p) => (
+  <Icon {...p}>
+    <path d="M4 7h16" />
+    <path d="M4 12h16" />
+    <path d="M4 17h16" />
   </Icon>
 )
 

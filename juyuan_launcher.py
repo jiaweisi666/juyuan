@@ -142,6 +142,8 @@ def main() -> int:
     vendor_env["PYTHONUTF8"] = "1"
     # MVP 阶段关闭底座自动更新，避免启动时静默拉取上游代码导致不可复现
     vendor_env["AUTO_UPDATE_ENABLED"] = "false"
+    # 屏蔽底座启动时自动打开浏览器（避免弹出原开源项目教程页）
+    vendor_env["AUTO_OPEN_BROWSER"] = "false"
     _spawn("底座+受控浏览器", [str(VENDOR_PY), "start.py"], VENDOR_DIR, env=vendor_env)
 
     # 先等受控浏览器 CDP 就绪（底座会先拉起浏览器再起服务）

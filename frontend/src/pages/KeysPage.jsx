@@ -25,6 +25,7 @@ import {
   ShieldIcon,
   AlertIcon,
   InfoIcon,
+  ChevronDownIcon,
 } from '../components/icons.jsx'
 import { Button, Card, Empty, Field, Input, Modal, PageHeader, Pill, Spinner, Toggle } from '../components/ui.jsx'
 
@@ -242,6 +243,7 @@ function KeyRow({ item, busy, onCopy, onReveal, onToggle, onDelete }) {
 }
 
 function IntegrationCard({ meta, onCopy }) {
+  const [expanded, setExpanded] = useState(false)
   const base = meta?.base_url || 'http://127.0.0.1:8300'
   const openaiBase = meta?.openai_base_url || `${base}/v1`
   const anthropicBase = meta?.anthropic_base_url || base
@@ -250,7 +252,7 @@ function IntegrationCard({ meta, onCopy }) {
   -H "Authorization: Bearer <你的密钥>" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "auto",
+    "model": "deepseek-chat",
     "messages": [{"role": "user", "content": "你好"}],
     "stream": true
   }'`
@@ -269,15 +271,63 @@ function IntegrationCard({ meta, onCopy }) {
           <CopyableRow value={anthropicBase} onCopy={onCopy} />
         </Field>
       </div>
-      <Field label="调用示例（model 可填 auto 或具体模型名）">
+      <Field label="调用示例（model 可填 deepseek-chat / deepseek-reasoner 等）">
         <pre className="overflow-x-auto rounded-md border border-line bg-surface-2 px-3 py-2 font-mono text-[11px] leading-relaxed text-ink-2">
           {curl}
         </pre>
       </Field>
-      <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
-        <InfoIcon size={13} />
-        可用模型随底座网页端自动同步；如列表未更新，可在「模型」页点击「同步底座模型」。
-      </div>
+
+      {/* 折叠展开：小白详细指南 */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1 self-start rounded-md bg-brand-soft/50 px-2 py-1 text-[12px] font-medium text-brand transition-colors hover:bg-brand-soft"
+      >
+        <span>{expanded ? '收起' : '展开'} 详细使用指南</span>
+        <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
+          <ChevronDownIcon size={14} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="flex flex-col gap-3 rounded-md bg-surface-2/60 p-3 text-[12px] leading-relaxed text-ink-2">
+          <div>
+            <span className="font-semibold text-ink">1. API Key 是什么？</span>
+            <p className="mt-0.5">
+              API Key 是一把「钥匙」。第三方应用（如 Trae、Cursor）需要它才能调用本网关。你先在上方「新建密钥」生成一把，复制后填到第三方应用里即可。
+            </p>
+          </div>
+          <div>
+            <span className="font-semibold text-ink">2. Base URL 是什么？</span>
+            <p className="mt-0.5">
+              Base URL 是「接口地址」。告诉第三方应用「去哪里找网关」。默认是 <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">{openaiBase}</code>，通常只需复制粘贴到第三方应用的「OpenAI Base URL」或「API 地址」一栏。
+            </p>
+          </div>
+          <div>
+            <span className="font-semibold text-ink">3. 模型怎么填？</span>
+            <p className="mt-0.5">
+              在第三方应用的「模型」一栏，填写本网关支持的模型名即可，例如：
+            </p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5 pl-1">
+              <li><code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">deepseek-chat</code> — 标准对话模式</li>
+              <li><code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">deepseek-reasoner</code> — 深度思考模式</li>
+              <li><code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">deepseek-chat-online</code> — 在线搜索模式</li>
+              <li><code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">deepseek-reasoner-online</code> — 深度思考 + 在线</li>
+            </ul>
+          </div>
+          <div>
+            <span className="font-semibold text-ink">4. 以 Trae 为例的配置步骤</span>
+            <p className="mt-0.5">
+              打开 Trae → 设置 → 模型提供方 → 选择「OpenAI 兼容」→ Base URL 填 <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">{openaiBase}</code> → API Key 填你从本网关复制的密钥 → 模型填 <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">deepseek-chat</code> → 保存即可开始使用。
+            </p>
+          </div>
+          <div>
+            <span className="font-semibold text-ink">5. 注意事项</span>
+            <p className="mt-0.5">
+              网关和第三方应用必须在同一台电脑运行（默认只监听 127.0.0.1）。如果第三方应用报「连接失败」，请检查网关是否已启动（看左下角绿灯）。
+            </p>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

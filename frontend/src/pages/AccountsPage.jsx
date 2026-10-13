@@ -133,12 +133,27 @@ export default function AccountsPage({ onToast }) {
   async function applyLogin(a) {
     setBusy(true)
     try {
-      const res = await applyAccountLogin(a.id)
-      onToast?.(
-        `已向受控浏览器注入登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
-        'success',
-      )
-      load()
+      // 先尝试直接注入；若受控浏览器中无对应标签页则先打开网页再注入
+      try {
+        const res = await applyAccountLogin(a.id)
+        onToast?.(
+          `已向受控浏览器注入登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
+          'success',
+        )
+        load()
+        return
+      } catch (err) {
+        // 注入失败时先在受控浏览器打开平台首页，等待加载后再注入
+        await openLoginPage(a.platform)
+        onToast?.('正在受控浏览器中打开平台页面，请稍候…', 'info')
+        await sleep(2500)
+        const res = await applyAccountLogin(a.id)
+        onToast?.(
+          `已向受控浏览器注入登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
+          'success',
+        )
+        load()
+      }
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {

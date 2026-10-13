@@ -408,99 +408,105 @@ async def apply_account_login(account_id: str) -> dict:
     storage = decrypt(account.storage_enc)
     if not cookies and not storage:
         raise HTTPException(status_code=400, detail={"message": "该账号未配置登录态，无法应用到浏览器"})
+    # 如果受控浏览器中没有对应标签页，先打开站点主页
+    homepage = str(definition.get("homepage") or "").strip()
+    if homepage:
+        try:
+            await _base_post("/api/browser/open-url", {"url": homepage})
+        except Exception:
+            pass
     result = await _apply_login_to_browser(definition, cookies, storage)
     return {"success": True, "platform": account.platform, **result}
 
 
 # --------------------------------------------------------------------------- #
-# 路由配置
+# 路由配置（已屏蔽）
 # --------------------------------------------------------------------------- #
-class WeightUpdate(BaseModel):
-    accuracy: float
-    latency: float
-    cost: float
-
-
-@router.get("/routing/weights")
-async def get_weights() -> dict:
-    return {"weights": get_router().weights}
-
-
-@router.put("/routing/weights")
-async def set_weights(payload: WeightUpdate) -> dict:
-    return {"weights": get_router().update_weights(payload.accuracy, payload.latency, payload.cost)}
-
-
-class RoutingConfig(BaseModel):
-    auto_router_enabled: bool | None = None
-    feedback_optimize: bool | None = None
-
-
-def _routing_config() -> dict:
-    settings = get_settings()
-    return {
-        "auto_router_enabled": settings.auto_router_enabled,
-        "feedback_optimize": settings.feedback_optimize,
-        "real_browser_enabled": settings.real_browser_enabled,
-    }
-
-
-@router.get("/routing/config")
-async def get_routing_config() -> dict:
-    return _routing_config()
-
-
-@router.put("/routing/config")
-async def set_routing_config(payload: RoutingConfig) -> dict:
-    settings = get_settings()
-    if payload.auto_router_enabled is not None:
-        settings.auto_router_enabled = payload.auto_router_enabled
-    if payload.feedback_optimize is not None:
-        settings.feedback_optimize = payload.feedback_optimize
-    return _routing_config()
-
-
-
-@router.get("/routing/profiles")
-async def get_profiles() -> dict:
-    return {"profiles": get_router()._profiles.snapshot()}  # noqa: SLF001
-
-
-@router.get("/routing/decisions")
-async def get_decisions(limit: int = 50) -> dict:
-    return {"decisions": get_database().list_routes(limit=limit)}
-
-
-class FeedbackPayload(BaseModel):
-    call_log_id: str = ""
-    platform: str
-    variant: str = "default"
-    rating: str  # up / down
-    comment: str = ""
-    task_type: str = "general"
-
-
-@router.post("/feedback")
-async def submit_feedback(payload: FeedbackPayload) -> dict:
-    db = get_database()
-    fb_id = db.add_feedback(payload.call_log_id, payload.rating, payload.comment)
-    get_router().apply_feedback(payload.platform, payload.variant, payload.rating, payload.task_type)
-    return {"feedback_id": fb_id, "applied": True}
+# class WeightUpdate(BaseModel):
+#     accuracy: float
+#     latency: float
+#     cost: float
+#
+#
+# @router.get("/routing/weights")
+# async def get_weights() -> dict:
+#     return {"weights": get_router().weights}
+#
+#
+# @router.put("/routing/weights")
+# async def set_weights(payload: WeightUpdate) -> dict:
+#     return {"weights": get_router().update_weights(payload.accuracy, payload.latency, payload.cost)}
+#
+#
+# class RoutingConfig(BaseModel):
+#     auto_router_enabled: bool | None = None
+#     feedback_optimize: bool | None = None
+#
+#
+# def _routing_config() -> dict:
+#     settings = get_settings()
+#     return {
+#         "auto_router_enabled": settings.auto_router_enabled,
+#         "feedback_optimize": settings.feedback_optimize,
+#         "real_browser_enabled": settings.real_browser_enabled,
+#     }
+#
+#
+# @router.get("/routing/config")
+# async def get_routing_config() -> dict:
+#     return _routing_config()
+#
+#
+# @router.put("/routing/config")
+# async def set_routing_config(payload: RoutingConfig) -> dict:
+#     settings = get_settings()
+#     if payload.auto_router_enabled is not None:
+#         settings.auto_router_enabled = payload.auto_router_enabled
+#     if payload.feedback_optimize is not None:
+#         settings.feedback_optimize = payload.feedback_optimize
+#     return _routing_config()
+#
+#
+# @router.get("/routing/profiles")
+# async def get_profiles() -> dict:
+#     return {"profiles": get_router()._profiles.snapshot()}  # noqa: SLF001
+#
+#
+# @router.get("/routing/decisions")
+# async def get_decisions(limit: int = 50) -> dict:
+#     return {"decisions": get_database().list_routes(limit=limit)}
+#
+#
+# class FeedbackPayload(BaseModel):
+#     call_log_id: str = ""
+#     platform: str
+#     variant: str = "default"
+#     rating: str  # up / down
+#     comment: str = ""
+#     task_type: str = "general"
+#
+#
+# @router.post("/feedback")
+# async def submit_feedback(payload: FeedbackPayload) -> dict:
+#     db = get_database()
+#     fb_id = db.add_feedback(payload.call_log_id, payload.rating, payload.comment)
+#     get_router().apply_feedback(payload.platform, payload.variant, payload.rating, payload.task_type)
+#     return {"feedback_id": fb_id, "applied": True}
 
 
 # --------------------------------------------------------------------------- #
-# 日志与统计
+# 日志与统计（已屏蔽）
 # --------------------------------------------------------------------------- #
-@router.get("/logs")
-async def list_logs(limit: int = 100, offset: int = 0, status: str = "", platform: str = "") -> dict:
-    return {"logs": get_database().list_calls(limit=limit, offset=offset, status=status, platform=platform)}
-
-
-@router.get("/stats/summary")
-async def stats_summary() -> dict:
-    return get_database().stats_summary()
-
-
-@router.get("/stats/series")
-async def stats_series(hours: int = 24) -> dict:
-    return {"series": get_database().stats_series(hours=hours)}
+# @router.get("/logs")
+# async def list_logs(limit: int = 100, offset: int = 0, status: str = "", platform: str = "") -> dict:
+#     return {"logs": get_database().list_calls(limit=limit, offset=offset, status=status, platform=platform)}
+#
+#
+# @router.get("/stats/summary")
+# async def stats_summary() -> dict:
+#     return get_database().stats_summary()
+#
+#
+# @router.get("/stats/series")
+# async def stats_series(hours: int = 24) -> dict:
+#     return {"series": get_database().stats_series(hours=hours)}

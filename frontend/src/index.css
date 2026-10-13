@@ -45,6 +45,11 @@ body,
 body {
   margin: 0;
   background: var(--color-canvas);
+  /* 极淡的天空蓝氛围光晕，保持浅色极简，仅在角落透出品牌色 */
+  background-image:
+    radial-gradient(1100px 560px at 12% -12%, oklch(0.955 0.022 240 / 0.6), transparent 62%),
+    radial-gradient(900px 520px at 112% 112%, oklch(0.96 0.016 240 / 0.45), transparent 58%);
+  background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -199,4 +204,32 @@ button {
   vertical-align: -2px;
   background: var(--color-brand);
   animation: caret-blink 1s step-end infinite;
+}
+
+/* 消息气泡入场：轻微上浮淡入 */
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.message-in {
+  animation: message-in 0.24s ease-out both;
+}
+
+/* 页面内容切换：淡入 */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.16s ease-out both;
 }

@@ -89,6 +89,8 @@ class WebPlatformPlugin(PlatformPlugin):
         alias = model.split(":", 1)[1] if ":" in model else model
         self._variant = alias or self._definition.get("default_variant", "default")
 
+    _conversation_tab_index: dict[str, int] = {}
+
     async def chat(
         self,
         messages: list[ChatMessage],
@@ -96,17 +98,29 @@ class WebPlatformPlugin(PlatformPlugin):
         stream: bool = False,
         **options: Any,
     ) -> AsyncGenerator[StreamDelta, None]:
+        conversation_id = options.pop("conversation_id", None)
+        tab_index = None
+        if conversation_id:
+            tab_index = self._conversation_tab_index.get(conversation_id)
+
         self.switch_model(model)
         payload = self._payload(messages, stream, options)
         start = time.perf_counter()
 
         try:
             if stream:
-                async for delta in self._stream_chat(payload):
+                resolved_tab_index = None
+                async for delta in self._stream_chat(payload, tab_index=tab_index):
+                    if delta.finished and delta.metadata and delta.metadata.get("tab_index") is not None:
+                        resolved_tab_index = delta.metadata["tab_index"]
                     yield delta
+                if conversation_id and resolved_tab_index is not None:
+                    self._conversation_tab_index[conversation_id] = resolved_tab_index
                 return
-            result = await self._nonstream_chat(payload)
+            result, resolved_tab_index = await self._nonstream_chat(payload, tab_index=tab_index)
             result.latency_ms = int((time.perf_counter() - start) * 1000)
+            if conversation_id and resolved_tab_index is not None:
+                self._conversation_tab_index[conversation_id] = resolved_tab_index
             yield StreamDelta(
                 content=result.content,
                 finished=True,
@@ -124,6 +138,12 @@ class WebPlatformPlugin(PlatformPlugin):
             async for delta in self._mock.chat(messages, model, stream=stream, **options):
                 yield delta
         except httpx.HTTPStatusError as exc:
+            if tab_index and exc.response.status_code == 404:
+                # 标签页可能已关闭，清除映射后回退到通用端点重试
+                self._conversation_tab_index.pop(conversation_id, None)
+                async for delta in self.chat(messages, model, stream=stream, conversation_id=conversation_id, **options):
+                    yield delta
+                return
             raise PlatformError(
                 f"底座返回错误 {exc.response.status_code}: {exc.response.text[:200]}",
                 platform=self.platform_id,
@@ -136,10 +156,9 @@ class WebPlatformPlugin(PlatformPlugin):
             async for delta in self._mock.chat(messages, model, stream=stream, **options):
                 yield delta
 
-    async def _nonstream_chat(self, payload: dict[str, Any]) -> ChatResult:
-        resp = await self._client.post(
-            "/v1/chat/completions", json=payload, headers=self._headers()
-        )
+    async def _nonstream_chat(self, payload: dict[str, Any], tab_index: int | None = None) -> tuple[ChatResult, int | None]:
+        endpoint = f"/tab/{tab_index}/v1/chat/completions" if tab_index else "/v1/chat/completions"
+        resp = await self._client.post(endpoint, json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
         content = ""
@@ -147,25 +166,46 @@ class WebPlatformPlugin(PlatformPlugin):
         if choices:
             content = (choices[0].get("message") or {}).get("content") or ""
         usage = data.get("usage") or {}
+
+        resolved_tab_index = None
+        x_tab = resp.headers.get("X-Resolved-Tab-Index")
+        if x_tab:
+            try:
+                resolved_tab_index = int(x_tab)
+            except ValueError:
+                pass
+
         return ChatResult(
             content=content,
             model=str(data.get("model") or payload["model"]),
             platform=self.platform_id,
             usage=usage,
             raw=data,
-        )
+        ), resolved_tab_index
 
-    async def _stream_chat(self, payload: dict[str, Any]) -> AsyncGenerator[StreamDelta, None]:
-        async with self._client.stream(
-            "POST", "/v1/chat/completions", json=payload, headers=self._headers()
-        ) as resp:
+    async def _stream_chat(self, payload: dict[str, Any], tab_index: int | None = None) -> AsyncGenerator[StreamDelta, None]:
+        endpoint = f"/tab/{tab_index}/v1/chat/completions" if tab_index else "/v1/chat/completions"
+        async with self._client.stream("POST", endpoint, json=payload, headers=self._headers()) as resp:
             resp.raise_for_status()
+
+            resolved_tab_index = None
+            x_tab = resp.headers.get("X-Resolved-Tab-Index")
+            if x_tab:
+                try:
+                    resolved_tab_index = int(x_tab)
+                except ValueError:
+                    pass
+
             async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):
                     continue
                 chunk = line[len("data:") :].strip()
                 if chunk == "[DONE]":
-                    yield StreamDelta(finished=True, finish_reason="stop")
+                    yield StreamDelta(
+                        finished=True,
+                        finish_reason="stop",
+                        metadata={"tab_index": resolved_tab_index} if resolved_tab_index is not None else None,
+                    )
                     return
                 try:
                     data = json.loads(chunk)
@@ -182,6 +222,7 @@ class WebPlatformPlugin(PlatformPlugin):
                     reasoning=delta.get("reasoning_content") or "",
                     finish_reason=finish_reason,
                     usage=data.get("usage"),
+                    metadata={"tab_index": resolved_tab_index} if (finish_reason and resolved_tab_index is not None) else None,
                 )
                 if piece.content or piece.reasoning or finish_reason:
                     yield piece

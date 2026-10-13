@@ -46,6 +46,7 @@ class StreamDelta:
     finish_reason: str | None = None
     usage: dict[str, int] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass

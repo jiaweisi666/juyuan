@@ -447,7 +447,7 @@ git -C vendor/universal-web-api apply ../../patches/universal-web-api-juyuan.pat
 
 - 网页自动化底座：[`lumingya/universal-web-api`](https://github.com/lumingya/universal-web-api)
 - 本项目基于该底座二次开发，感谢上游作者的开源工作。
-- 本项目使用 **AGPL-3.0** 许可证，详见 [`LICENSE`](LICENSE)。
+- 本项目基于 AGPL-3.0 开源。使用者应自行承担违反目标网站条款、账号受限、数据丢失或其他直接/间接损失的责任；维护者不提供任何可用性或账号安全保证。
 
 <div align="center">
 

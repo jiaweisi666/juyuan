@@ -17,6 +17,7 @@ fi
 echo "[2/4] 安装后端依赖..."
 backend/.venv/bin/python -m pip install --upgrade pip >/dev/null
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
+backend/.venv/bin/python -m pip install -r backend/requirements-web.txt
 
 echo "[3/4] 构建前端..."
 if command -v npm >/dev/null 2>&1; then

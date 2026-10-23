@@ -27,6 +27,8 @@ import {
   CheckIcon,
   SearchIcon,
   ZapIcon,
+  AlertIcon,
+  ShieldCheckIcon,
 } from '../components/icons.jsx'
 import { Button, Card, Empty, Field, Input, Modal, PageHeader, Pill, Select, Textarea } from '../components/ui.jsx'
 
@@ -129,31 +131,18 @@ export default function AccountsPage({ onToast }) {
     }
   }
 
-  // 把账号池中的登录态（Cookie + localStorage）注入受控浏览器（让底座浏览器直接进入登录态）
+  // 把账号池中的登录态（Cookie + localStorage）注入受控浏览器。
+  // 后端会「有标签页则复用、没有才打开一个」，前端不再额外调用 openLoginPage，
+  // 避免一次点击连开 3 个标签页。
   async function applyLogin(a) {
     setBusy(true)
     try {
-      // 先尝试直接注入；若受控浏览器中无对应标签页则先打开网页再注入
-      try {
-        const res = await applyAccountLogin(a.id)
-        onToast?.(
-          `已向受控浏览器注入登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
-          'success',
-        )
-        load()
-        return
-      } catch (err) {
-        // 注入失败时先在受控浏览器打开平台首页，等待加载后再注入
-        await openLoginPage(a.platform)
-        onToast?.('正在受控浏览器中打开平台页面，请稍候…', 'info')
-        await sleep(2500)
-        const res = await applyAccountLogin(a.id)
-        onToast?.(
-          `已向受控浏览器注入登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
-          'success',
-        )
-        load()
-      }
+      const res = await applyAccountLogin(a.id)
+      onToast?.(
+        `已应用登录态（Cookie ${res?.cookie_count ?? 0} / localStorage ${res?.storage_count ?? 0}），平台即将可用`,
+        'success',
+      )
+      load()
     } catch (err) {
       onToast?.(err.message, 'error')
     } finally {
@@ -298,25 +287,26 @@ export default function AccountsPage({ onToast }) {
       />
 
       {/* 概览 */}
-      <div className="mb-3 grid grid-cols-4 gap-2.5">
-        <StatCard label="账号总数" value={summary.total} tone="brand" />
-        <StatCard label="正常" value={summary.active} tone="emerald" />
-        <StatCard label="冷却中" value={summary.cooldown} tone="orange" />
-        <StatCard label="失效" value={summary.invalid} tone="rose" />
+      <div className="mb-3.5 grid grid-cols-4 gap-3">
+        <StatCard label="账号总数" value={summary.total} tone="brand" icon={AccountsIcon} hint="已接入平台" />
+        <StatCard label="正常" value={summary.active} tone="emerald" icon={ShieldCheckIcon} hint="可立即调用" />
+        <StatCard label="冷却中" value={summary.cooldown} tone="orange" icon={ZapIcon} hint="限流恢复中" />
+        <StatCard label="失效" value={summary.invalid} tone="rose" icon={AlertIcon} hint="需要重新登录" />
       </div>
 
       {/* 过滤栏 */}
-      <div className="mb-2 flex items-center gap-2">
+      <Card className="mb-3 flex items-center gap-2 p-2">
         <div className="relative flex-1">
           <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索邮箱 / 备注"
-            className="pl-8"
+            className="border-0 bg-transparent pl-8 shadow-none focus:shadow-none"
           />
         </div>
-        <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-[150px]">
+        <span className="h-5 w-px bg-line" />
+        <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-[150px] border-0 bg-transparent shadow-none">
           <option value="">全部平台</option>
           {platforms.map((p) => (
             <option key={p.platform_id} value={p.platform_id}>
@@ -324,13 +314,13 @@ export default function AccountsPage({ onToast }) {
             </option>
           ))}
         </Select>
-        <Button icon={RefreshIcon} onClick={load} loading={loading} />
-      </div>
+        <Button icon={RefreshIcon} onClick={load} loading={loading} variant="ghost" title="刷新列表" />
+      </Card>
 
       {/* 列表 */}
       <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="grid shrink-0 grid-cols-[1.4fr_1.6fr_0.8fr_0.9fr_auto] gap-2 border-b border-line
-          bg-surface-2/60 px-3 py-2 text-[11px] font-medium text-ink-3">
+        <div className="grid shrink-0 grid-cols-[1.35fr_1.7fr_0.8fr_0.9fr_auto] gap-2 border-b border-line/70
+          bg-surface-2/55 px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-3">
           <span>平台</span>
           <span>账号 / 备注</span>
           <span>状态</span>
@@ -351,24 +341,43 @@ export default function AccountsPage({ onToast }) {
               return (
                 <div
                   key={a.id}
-                  className="grid grid-cols-[1.4fr_1.6fr_0.8fr_0.9fr_auto] items-center gap-2 border-b border-line px-3 py-2 last:border-b-0 hover:bg-surface-2/50"
+                  className="grid grid-cols-[1.35fr_1.7fr_0.8fr_0.9fr_auto] items-center gap-2 border-b border-line/60 px-3.5 py-2.5 transition-colors last:border-b-0 hover:bg-brand-mist/70"
                 >
-                  <span className="font-mono text-[12px] text-ink">{a.platform}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#eaf4ff] to-[#f7fbff] text-[11px] font-semibold uppercase text-brand-ink ring-1 ring-brand/10">
+                      {(a.platform || '?').slice(0, 2)}
+                    </span>
+                    <span className="truncate font-mono text-[12px] text-ink">{a.platform}</span>
+                  </div>
                   <div className="min-w-0">
-                    <div className="truncate text-[12px] text-ink">{a.email || '—'}</div>
-                    <div className="truncate font-mono text-[11px] text-ink-3">
-                      {a.masked_session || creds}
+                    <div className="truncate text-[12px] font-medium text-ink">{a.email || '—'}</div>
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                      <span className="truncate rounded-md bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-ink-3">
+                        {creds}
+                      </span>
+                      {a.masked_session ? (
+                        <span className="truncate font-mono text-[10px] text-ink-3">{a.masked_session}</span>
+                      ) : null}
                     </div>
                   </div>
                   <Pill tone={meta.tone} dot>
                     {meta.label}
                   </Pill>
                   <span className="text-[12px] text-ink-2">
-                    {a.call_count} / {rate}%
+                    <span className="font-medium text-ink">{a.call_count}</span>
+                    <span className="text-ink-3"> / </span>
+                    {rate}%
                   </span>
                   <div className="flex items-center justify-end gap-1">
                     {(a.has_cookies || a.has_storage) && (
-                      <Button size="sm" variant="ghost" onClick={() => applyLogin(a)} disabled={busy}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={ShieldCheckIcon}
+                        onClick={() => applyLogin(a)}
+                        disabled={busy}
+                        title="把登录态注入受控浏览器（仅在缺少标签页时打开一个）"
+                      >
                         应用登录态
                       </Button>
                     )}
@@ -377,7 +386,8 @@ export default function AccountsPage({ onToast }) {
                     </Button>
                     <button
                       onClick={() => removeAccount(a)}
-                      className="rounded p-1 text-ink-3 hover:text-func-rose"
+                      className="ui-press rounded-lg p-1.5 text-ink-3 transition-colors hover:bg-func-rose-soft hover:text-func-rose"
+                      title="删除账号"
                     >
                       <TrashIcon size={14} />
                     </button>
@@ -497,17 +507,34 @@ export default function AccountsPage({ onToast }) {
   )
 }
 
-function StatCard({ label, value, tone }) {
+function StatCard({ label, value, tone, icon: Icon, hint }) {
   const toneCls = {
-    brand: 'text-brand-ink bg-brand-soft',
-    emerald: 'text-func-emerald bg-func-emerald-soft',
-    orange: 'text-func-orange bg-func-orange-soft',
-    rose: 'text-func-rose bg-func-rose-soft',
+    brand: 'text-brand-ink bg-brand-soft ring-brand/10',
+    emerald: 'text-func-emerald bg-func-emerald-soft ring-func-emerald/10',
+    orange: 'text-func-orange bg-func-orange-soft ring-func-orange/10',
+    rose: 'text-func-rose bg-func-rose-soft ring-func-rose/10',
+  }[tone]
+  const glow = {
+    brand: 'bg-brand/20',
+    emerald: 'bg-func-emerald/20',
+    orange: 'bg-func-orange/20',
+    rose: 'bg-func-rose/20',
   }[tone]
   return (
-    <Card className="flex items-center justify-between px-3 py-2.5">
-      <span className="text-[12px] text-ink-3">{label}</span>
-      <span className={`rounded-md px-2 py-0.5 text-[15px] font-semibold ${toneCls}`}>{value}</span>
+    <Card className="ui-card-hover relative overflow-hidden px-3.5 py-3">
+      <span className={`pointer-events-none absolute -right-3 -top-4 size-16 rounded-full blur-2xl ${glow}`} />
+      <div className="relative flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] text-ink-3">{label}</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-[20px] font-semibold leading-none tracking-tight text-ink">{value}</span>
+            <span className="truncate text-[10px] text-ink-3">{hint}</span>
+          </div>
+        </div>
+        <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 ${toneCls}`}>
+          <Icon size={17} />
+        </span>
+      </div>
     </Card>
   )
 }

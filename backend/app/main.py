@@ -95,6 +95,12 @@ def create_app() -> FastAPI:
         async def index() -> FileResponse:
             return FileResponse(FRONTEND_DIST / "index.html")
 
+        @app.get("/juyuan-logo.png")
+        @app.get("/favicon.ico")
+        async def logo() -> FileResponse:
+            """前端 public 资源（Logo / favicon）。"""
+            return FileResponse(FRONTEND_DIST / "juyuan-logo.png")
+
     return app
 
 

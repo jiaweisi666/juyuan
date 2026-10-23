@@ -17,6 +17,7 @@ if not exist "backend\.venv\Scripts\python.exe" (
 echo [2/4] 安装后端依赖...
 "backend\.venv\Scripts\python.exe" -m pip install --upgrade pip >nul
 "backend\.venv\Scripts\python.exe" -m pip install -r backend\requirements.txt || goto :error
+"backend\.venv\Scripts\python.exe" -m pip install -r backend\requirements-web.txt || goto :error
 
 echo [3/4] 构建前端...
 where npm >nul 2>nul

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from ..accounts.crypto import decrypt, mask
 from ..accounts.pool import get_pool
-from ..browser.cdp import CDPError, apply_login, read_local_storage
+from ..browser.cdp import CDPError, apply_login, find_page, read_local_storage
 from ..config import get_settings
 from ..logging_config import get_logger
 from ..platforms.catalog import refresh as refresh_model_catalog
@@ -42,9 +42,8 @@ logger = get_logger(__name__)
 # --------------------------------------------------------------------------- #
 @router.get("/models")
 async def list_models() -> dict:
-    """前端模型清单（含 AUTO），随底座模型自动迭代。"""
-    data = [{"id": "auto", "owned_by": "juyuan"}]
-    data += [{"id": m, "owned_by": model_owner(m)} for m in all_known_models()]
+    """前端模型清单：仅暴露当前正式支持的模型（不再包含 AUTO）。"""
+    data = [{"id": m, "owned_by": model_owner(m)} for m in all_known_models()]
     return {"data": data, "catalog": model_catalog_snapshot()}
 
 
@@ -394,6 +393,36 @@ async def _apply_login_to_browser(
         raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
 
 
+async def _ensure_browser_page(definition: dict[str, Any]) -> None:
+    """确保受控浏览器中已有该平台标签页；仅在确实没有时才新开一个。
+
+    之前「应用登录态」无条件调用 open-url，配合前端失败回退，会一次点出 3 个标签页。
+    这里改为「有则复用、无则只开一个，并等待页面可写 localStorage」。
+    """
+    host = _definition_host(definition)
+    if not host:
+        return
+    if await asyncio.to_thread(find_page, host) is not None:
+        return
+    homepage = str(definition.get("homepage") or "").strip()
+    if not homepage:
+        return
+    try:
+        await _base_post("/api/browser/open-url", {"url": homepage})
+    except HTTPException as exc:
+        detail = exc.detail.get("message") if isinstance(exc.detail, dict) else str(exc.detail)
+        raise HTTPException(status_code=502, detail={"message": f"打开 {host} 页面失败：{detail}"}) from exc
+    # 等待新标签页出现（最多约 8 秒），避免刚 open-url 就注入导致 localStorage 访问被拒
+    for _ in range(32):
+        if await asyncio.to_thread(find_page, host) is not None:
+            return
+        await asyncio.sleep(0.25)
+    raise HTTPException(
+        status_code=502,
+        detail={"message": f"已尝试打开 {host}，但受控浏览器中未出现对应标签页，请稍后重试"},
+    )
+
+
 @router.post("/accounts/{account_id}/apply")
 async def apply_account_login(account_id: str) -> dict:
     """把指定账号的登录态（Cookie + localStorage）注入受控浏览器，使其直接进入登录态。"""
@@ -408,13 +437,8 @@ async def apply_account_login(account_id: str) -> dict:
     storage = decrypt(account.storage_enc)
     if not cookies and not storage:
         raise HTTPException(status_code=400, detail={"message": "该账号未配置登录态，无法应用到浏览器"})
-    # 如果受控浏览器中没有对应标签页，先打开站点主页
-    homepage = str(definition.get("homepage") or "").strip()
-    if homepage:
-        try:
-            await _base_post("/api/browser/open-url", {"url": homepage})
-        except Exception:
-            pass
+    # 仅在缺少标签页时打开一次；已有标签页直接复用
+    await _ensure_browser_page(definition)
     result = await _apply_login_to_browser(definition, cookies, storage)
     return {"success": True, "platform": account.platform, **result}
 

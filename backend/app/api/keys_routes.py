@@ -65,8 +65,8 @@ async def key_meta() -> dict:
     """返回可授权模型清单与第三方接入所需的基础地址。"""
     settings = get_settings()
     base = f"http://{settings.host}:{settings.port}"
-    models = [{"id": "auto", "owned_by": "juyuan", "label": "AUTO · 智能路由"}]
-    models += [{"id": m, "owned_by": model_owner(m), "label": m} for m in all_known_models()]
+    # 当前仅支持 platforms.json 中声明的模型，不再暴露已下线的 AUTO 选项
+    models = [{"id": m, "owned_by": model_owner(m), "label": m} for m in all_known_models()]
     return {
         "base_url": base,
         "openai_base_url": f"{base}/v1",

@@ -1,7 +1,7 @@
 /**
  * KeysPage.jsx - API 密钥管理页（核心功能）。
  *
- * 把网关聚合的各网页大模型（含 AUTO 智能路由）签发为 OpenAI / Anthropic
+ * 把网关当前支持的 DeepSeek 四个模型签发为 OpenAI / Anthropic
  * 兼容的 API Key，供第三方应用（如 Trae、各类 SDK 客户端）直接调用。
  */
 
@@ -127,7 +127,7 @@ export default function KeysPage({ onToast }) {
     <div className="flex h-full flex-col px-5 py-4">
       <PageHeader
         title="API 密钥"
-        desc="把聚合的网页大模型（含 AUTO 智能路由）签发为 API Key，供第三方应用以 OpenAI / Anthropic 协议调用。"
+        desc="把聚元支持的四个 DeepSeek 模型签发为 API Key，供第三方应用以 OpenAI / Anthropic 协议调用。"
         actions={
           <>
             <Button icon={RefreshIcon} onClick={load} loading={loading}>
@@ -204,36 +204,45 @@ export default function KeysPage({ onToast }) {
 function KeyRow({ item, busy, onCopy, onReveal, onToggle, onDelete }) {
   const models = item.models || []
   return (
-    <div className="flex flex-col gap-2 px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <KeyIcon size={15} className="shrink-0 text-brand" />
-        <span className="text-[13px] font-medium text-ink">{item.name || '未命名密钥'}</span>
-        <Pill tone={item.enabled ? 'emerald' : 'neutral'} dot>
-          {item.enabled ? '启用中' : '已禁用'}
-        </Pill>
+    <div className="group flex flex-col gap-2.5 px-4 py-3 transition-colors hover:bg-brand-mist/60">
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-ink ring-1 ring-brand/10">
+          <KeyIcon size={15} />
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-[13px] font-medium text-ink">{item.name || '未命名密钥'}</span>
+            <Pill tone={item.enabled ? 'emerald' : 'neutral'} dot>
+              {item.enabled ? '启用中' : '已禁用'}
+            </Pill>
+          </div>
+          <span className="mt-0.5 block font-mono text-[10px] text-ink-3">{item.key_prefix}…</span>
+        </div>
         <div className="flex-1" />
-        <span className="font-mono text-[11px] text-ink-3">{item.key_prefix}…</span>
+        <Toggle checked={item.enabled} onChange={() => onToggle(item)} disabled={busy} />
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className={CODE_CLS}>
-          {models.length ? `${models.length} 个模型` : '全部模型（含 AUTO）'}
-        </span>
+      <div className="flex flex-wrap items-center gap-2 pl-[42px]">
+        <span className={CODE_CLS}>{models.length ? `${models.length} 个模型` : '全部模型（4 个）'}</span>
         <span className="text-[11px] text-ink-3">调用 {item.usage_count || 0} 次</span>
         {item.last_used_at ? (
           <span className="text-[11px] text-ink-3">最近 {formatTime(item.last_used_at)}</span>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 pl-[42px]">
         <Button size="sm" variant="ghost" icon={CopyIcon} onClick={() => onReveal(item.id)} loading={busy}>
           复制密钥
         </Button>
-        <Button size="sm" variant="ghost" icon={busy ? undefined : item.enabled ? AlertIcon : CheckIcon} onClick={() => onToggle(item)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={busy ? undefined : item.enabled ? AlertIcon : CheckIcon}
+          onClick={() => onToggle(item)}
+        >
           {item.enabled ? '禁用' : '启用'}
         </Button>
         <div className="flex-1" />
-        <Toggle checked={item.enabled} onChange={() => onToggle(item)} disabled={busy} />
         <Button size="sm" variant="danger" icon={TrashIcon} onClick={() => onDelete(item)} disabled={busy}>
           删除
         </Button>
@@ -258,11 +267,16 @@ function IntegrationCard({ meta, onCopy }) {
   }'`
 
   return (
-    <Card className="flex flex-col gap-3 p-3">
-      <p className="text-[12px] text-ink-2">
-        任意兼容 OpenAI 或 Anthropic 协议的应用（Trae、Cursor、Claude Code、各类 SDK）都可把接口地址指向本网关。
-        第三方既能直连官方 API，也能通过本网关使用网页大模型。
-      </p>
+    <Card className="flex flex-col gap-3 p-4">
+      <div className="flex items-start gap-3 rounded-xl bg-gradient-to-r from-[#f1f8ff] via-white to-white p-3 ring-1 ring-line/60">
+        <img src="./juyuan-logo.png" alt="" className="size-10 rounded-xl border border-white bg-white object-contain p-0.5 shadow-sm" />
+        <div className="min-w-0">
+          <div className="text-[12px] font-semibold text-ink">把聚元接入你的工具</div>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-3">
+            任意兼容 OpenAI / Anthropic 协议的应用（Trae、Cursor、Claude Code、各类 SDK）都可以把接口地址指向本网关。
+          </p>
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="OpenAI 兼容 Base URL">
           <CopyableRow value={openaiBase} onCopy={onCopy} />
@@ -272,7 +286,7 @@ function IntegrationCard({ meta, onCopy }) {
         </Field>
       </div>
       <Field label="调用示例（model 可填 deepseek-chat / deepseek-reasoner 等）">
-        <pre className="overflow-x-auto rounded-md border border-line bg-surface-2 px-3 py-2 font-mono text-[11px] leading-relaxed text-ink-2">
+        <pre className="overflow-x-auto rounded-xl border border-line/80 bg-[#f7faff] px-3.5 py-3 font-mono text-[11px] leading-relaxed text-ink-2">
           {curl}
         </pre>
       </Field>
@@ -354,7 +368,8 @@ function CreateKeyModal({ open, meta, loading, onClose, onSubmit }) {
     }
   }, [open])
 
-  const models = meta?.models || []
+  // AUTO 已下线：只展示当前正式支持的四个模型
+  const models = (meta?.models || []).filter((m) => m.id !== 'auto')
   const grouped = useMemo(() => {
     const map = {}
     for (const m of models) {
@@ -405,10 +420,13 @@ function CreateKeyModal({ open, meta, loading, onClose, onSubmit }) {
           </div>
         </div>
 
-        <div className="max-h-[260px] overflow-y-auto rounded-md border border-line">
+        <div className="max-h-[260px] overflow-y-auto rounded-xl border border-line/80 bg-white/70">
           {Object.entries(grouped).map(([owner, ids]) => (
-            <div key={owner} className="border-b border-line px-3 py-2 last:border-b-0">
-              <div className="mb-1 text-[11px] font-medium text-ink-3">{owner}</div>
+            <div key={owner} className="border-b border-line/60 px-3 py-2.5 last:border-b-0">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+                <span className="size-1.5 rounded-full bg-brand/70" />
+                {owner}
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {ids.map((id) => {
                   const active = selected.includes(id)
@@ -416,12 +434,13 @@ function CreateKeyModal({ open, meta, loading, onClose, onSubmit }) {
                     <button
                       key={id}
                       onClick={() => toggleModel(id)}
-                      className={`rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors ${
+                      className={`ui-press flex items-center gap-1 rounded-lg border px-2 py-1 font-mono text-[10px] transition-all ${
                         active
-                          ? 'border-brand bg-brand-soft text-brand-ink'
-                          : 'border-line bg-surface-2 text-ink-2 hover:border-line-strong'
+                          ? 'border-brand/30 bg-brand-soft text-brand-ink shadow-[inset_0_0_0_1px_rgba(47,134,246,0.08)]'
+                          : 'border-line/80 bg-surface-2/70 text-ink-2 hover:border-line-strong hover:bg-white'
                       }`}
                     >
+                      {active ? <CheckIcon size={11} /> : null}
                       {id}
                     </button>
                   )
@@ -433,7 +452,7 @@ function CreateKeyModal({ open, meta, loading, onClose, onSubmit }) {
 
         <div className="flex items-start gap-1.5 text-[11px] text-ink-3">
           <InfoIcon size={13} className="mt-0.5 shrink-0" />
-          不选择任何模型表示授予「全部模型」权限（含 AUTO 智能路由）。选择后仅可调用所选模型。
+          不选择任何模型表示授予「全部模型」权限（当前为 4 个 DeepSeek 模型）。选择后仅可调用所选模型。
         </div>
       </div>
     </Modal>
@@ -474,8 +493,10 @@ function SecretModal({ open, name, secret, onClose, onCopy }) {
 
 function SectionTitle({ icon: Icon, children }) {
   return (
-    <div className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-ink-2">
-      <Icon size={14} className="text-ink-3" />
+    <div className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-ink-2">
+      <span className="flex size-6 items-center justify-center rounded-lg bg-brand-soft/80 text-brand-ink">
+        <Icon size={13} />
+      </span>
       {children}
     </div>
   )

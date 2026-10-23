@@ -1,7 +1,7 @@
 # Agent 任务记忆档案
-> 档案版本：v1.8
-> 最后更新：2026-10-12
-> 任务总进度：98%（新增「桌面化 MVP 一键启动器」——`juyuan_launcher.py` + PyInstaller 打包 `JuyuanLauncher.exe`，实测一键启动三服务 9222/8199/8300、自动打开浏览器、退出清理全部通过；并形成「网关=聚合对话网关、非 Agent 运行时」的能力边界结论。原有唯一缺口仍是本机无真实 deepseek 登录令牌）
+> 档案版本：v1.9
+> 最后更新：2026-10-23
+> 任务总进度：99%（完成第 6 轮用户反馈：①「应用登录态」只保留/新开 1 个标签页；②网页对话按聚元会话复用，不再每轮新开，首轮由网关显式新建；③模型清单只保留 4 个 DeepSeek 模型，剔除站点标识；④API Key 授权移除 AUTO；⑤前端浅色系美化 + 接入聚元 Logo。附带修复：账号凭证信号量泄漏导致第三次调用超时、底座流式成功后误判冷却）
 
 ## 一、核心目标与身份定义
 > （固定不变，仅初始化一次）
@@ -15,7 +15,17 @@
 
 ## 二、已完成工作清单
 > （按时间倒序，增量追加）
-> 🆕 **最新一轮（2026-10-12）：桌面化 MVP 一键启动器（PyInstaller 打包 EXE）+ Agent 能力边界结论 + 打包需求文档**
+> 🆕 **最新一轮（2026-10-23）：第 6 轮用户反馈 6 项（登录态单标签页 / 对话连续性 / 模型清单 / AUTO 下架 / 前端美化+Logo）+ 运行时缺陷修复**
+> - **①「应用登录态」连开 3 个标签页**：根因 = 后端 `apply_account_login` 每次无条件 `open-url` + 前端注入失败后又 `openLoginPage` 再重试，三步各开一个。修复：新增 `admin_routes._ensure_browser_page()`（有标签页则复用、没有才开 1 个并轮询等待出现）；前端 `AccountsPage.applyLogin` 删除失败回退，仅调一次 `applyAccountLogin`。实测：无标签页时 1 个，已有标签页时前后仍为 1 个。
+> - **②每轮对话都新开 DeepSeek 会话（网页端 + API）**：根因两层——底座 `TabSession.get_conversation_status()` 在 `CONVERSATION_TIMEOUT_THRESHOLD=0` 时 `reason=threshold_disabled_reuse` 却没有把 `will_start_new_conversation` 置 False，导致每轮都点「新建对话」；且网关没有「首轮新建」的显式信号。修复：底座阈值为 0 时复用当前对话；新增 `X-Juyuan-New-Conversation` 请求头，网关仅在聚元会话首轮发送（`ChatCompletionRequest.new_conversation` → `orchestrator` → `web.py`），底座在 `tab_routes` 透传到 `workflow` 并强制点击一次「新建对话」。实测 API Key 连续 3 次非流式请求同一 URL；新 `conversation_id` 首轮 URL 变化、第二轮复用；网页端 `/api/chat/send` 同样通过。
+> - **③「同步底座模型」蹦出 `chat.deepseek.com`/`deepseek`/`www.chat.deepseek.com`**：根因 = 底座 `/v1/models` 返回的是站点标识，`catalog.refresh` 把无法归因的名字写进动态模型覆盖层。修复：`catalog.refresh` 只保留与 `platforms.json` 同名的模型，站点标识记录日志后忽略；`loader.load_platform_definitions` 不再把动态模型并入 `models`。`/api/models`、`/api/platforms`、`/api/keys/meta`、`/v1/models` 均只返回 4 个模型。
+> - **④新建 API Key 弹窗中的 AUTO**：后端 `/api/keys/meta`、`/api/models`、`/v1/models` 移除 AUTO；`platforms.json` 删除 `auto` 别名；前端模型授权弹窗只显示 4 个 DeepSeek 模型。实测弹窗文本确认无 AUTO。
+> - **⑤前端美化 + Logo**：`frontend/public/juyuan-logo.png` 替换为用户提供的 320×320 聚元飞鸟 Logo（透明化处理），新增 favicon；`index.css` 重做浅色云白 + 聚元蓝设计令牌、玻璃卡片、轻阴影、渐变按钮、hover 抬升、按压反馈、页面/消息/弹窗/Toast 动效；`App.jsx` 侧栏品牌化、`ChatPage` 空态 Hero + 建议卡片 + 渐变用户气泡 + 助手 Logo 头像、`AccountsPage`/`ModelsPage`/`KeysPage`/`SetupPage` 全面视觉统一。
+> - **⑥附带修复两个后端运行时缺陷**：a) `orchestrator._run()` 在调用方收到 `finished` 后 `break` 时不会走 `else`，账号凭证与 `Semaphore` 永久泄漏（第 3 次请求起 90s 超时）→ 改为 `finally` 释放，`completed or saw_content` 判定成功；b) 流式成功但未显式 `finished` 时曾把账号误标冷却 → `saw_content` 兜底。实测连续 3 次非流式 / 网页流式均 200，账号保持 active。
+> - 校验：`py_compile` EXIT=0；`npm.cmd run build` 通过（`dist/assets/index-B5YY3Vhe.js 450.25 kB`、`index-DP0At83Z.css 53.72 kB`）；前端控制台无错误，Logo 320×320 正常加载。
+> - 说明：底座改动位于 `vendor/universal-web-api`（`session.py`、`workflow.py`、`api/chat.py`、`api/tab_routes.py`），该目录被 `.gitignore` 忽略；当前工作目录已直接打补丁，若重新拉取底座需重新应用「阈值复用 + 新会话 Header」两处补丁。
+>
+> **（上一轮，2026-10-12）：桌面化 MVP 一键启动器（PyInstaller 打包 EXE）+ Agent 能力边界结论 + 打包需求文档**
 > - **【务虚·Agent 失败根因】** 用户反馈自建 API Key 接入 Trae 类 Agent 无法理解指令。定位到两个代码级根因：① `backend/app/tool_calling.py::parse_tool_calls()` 只识别 `{"tool_calls":[...]}` 与 ReAct `Action:/Action Input:` 两种格式，认不出 Trae 的 `<adapter_calls>` XML 格式；② `gateway/orchestrator.py::stream()` 在 `if not use_tools:` 分支下**掐断增量输出**（工具模式缓冲至末尾一次性下发）→ Agent 卡在 4%。**根本结论**：官方 API 是模型**原生训练**输出标准 `tool_calls`（协议级承诺），而本项目是用提示词+正则**模拟**（翻译/恳求），属「聚合对话网关」而非「Agent 运行时」——**是能力边界，非项目失败**。项目定位回归「网页对话大模型」本源的聚合网关。
 > - **【产出·需求文档】** 新建 `d:\Project\juyuan\聚元网关-桌面化打包需求文档.md`（11 章：背景目标/现状分析/方案对比/7 项功能需求/技术选型/打包分发/准备工作/风险难点/非功能/阶段划分/验收标准）。方案对比：纯启动器 EXE（**MVP 采用**）/ Electron / Tauri 2（长期推荐，用户表示「之后再说」）/ Docker（**不采用**，不满足「双击即用」）。
 > - **【落地·MVP 启动器】** 新建 `juyuan_code/juyuan_launcher.py`（仅标准库）：按序拉起 底座+受控浏览器（复用 `vendor/universal-web-api/start.py`，子进程环境置 `AUTO_UPDATE_ENABLED=false`）→ 轮询 CDP `9222/json/version` → 轮询底座 `8199/health` → 起网关 `backend/run.py` → 轮询 `8300/health` → `webbrowser.open(8300)`；Ctrl+C 用 `taskkill /F /T` 逆序清理子进程树。frozen 适配：`PROJECT_DIR = Path(sys.executable).parent`（要求 exe 与 `vendor/`、`backend/` 同级）。

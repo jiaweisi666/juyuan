@@ -1,0 +1,9 @@
+# Keep patch files byte-stable so `git apply` works on every platform.
+*.patch -text
+
+# Images are binary.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary

@@ -4,8 +4,7 @@
     "deepseek-chat": { "platform": "deepseek", "variant": "quick", "label": "DeepSeek Chat" },
     "deepseek-reasoner": { "platform": "deepseek", "variant": "expert", "label": "DeepSeek Reasoner" },
     "deepseek-chat-online": { "platform": "deepseek", "variant": "quick", "label": "DeepSeek Chat 联网" },
-    "deepseek-reasoner-online": { "platform": "deepseek", "variant": "expert", "label": "DeepSeek Reasoner 联网" },
-    "auto": { "platform": "auto", "variant": "auto", "label": "智能路由 (AUTO)" }
+    "deepseek-reasoner-online": { "platform": "deepseek", "variant": "expert", "label": "DeepSeek Reasoner 联网" }
   },
   "platforms": [
     {

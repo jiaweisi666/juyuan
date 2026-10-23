@@ -64,15 +64,30 @@ async def send(payload: SendPayload):
     gateway = get_gateway()
 
     conv_id = payload.conversation_id
-    if not conv_id or db.get_conversation(conv_id) is None:
+    conversation = db.get_conversation(conv_id) if conv_id else None
+    if conversation is None:
         conv_id = db.create_conversation(payload.content[:24] or "新对话", payload.model)
+        conversation = {"messages": []}
+    # 首轮消息才在网页端「新建对话」；后续轮次复用同一个网页对话。
+    # 这样是否新开对话由聚元会话（用户点「新对话」）决定，而不是每一轮都新开。
+    # 以「是否已有 assistant 回复」判定：首轮失败重试时仍会重新新建，避免接在旧会话后面。
+    is_first_turn = not any(
+        (item.get("role") or "") == "assistant"
+        for item in (conversation.get("messages") or [])
+    )
 
     # 仅发送当前消息，不把历史对话作为提示词发给底座
     # （避免 deepseek 网页端每次开启新对话时重复收到完整历史）
     messages = [ChatMessage(role="user", content=payload.content)]
     db.add_message(conv_id, "user", payload.content)
 
-    request = ChatCompletionRequest(model=payload.model, messages=messages, stream=True, conversation_id=conv_id)
+    request = ChatCompletionRequest(
+        model=payload.model,
+        messages=messages,
+        stream=True,
+        conversation_id=conv_id,
+        new_conversation=is_first_turn,
+    )
 
     if not payload.stream:
         result = await gateway.complete(request)

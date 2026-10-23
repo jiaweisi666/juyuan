@@ -229,6 +229,34 @@ def _evaluate(ws: Any, msg_id: int, expression: str, timeout: float) -> Any:
     return None
 
 
+def _wait_page_ready(ws: Any, msg_id: int, host: str, timeout: float = 15.0) -> tuple[int, bool]:
+    """等待标签页真正完成导航且当前文档可访问 localStorage。
+
+    新开的标签页在导航完成前 `document.readyState` 仍为 loading/blank，
+    此时写 localStorage 会抛 SecurityError（Access is denied），因此先轮询等待。
+    返回 (最新消息 id, 是否就绪)。
+    """
+    deadline = time.time() + max(1.0, timeout)
+    expression = (
+        "(function(){try{return location.href+'|'+document.readyState+'|'+(typeof localStorage);}"
+        "catch(e){return 'ERR:'+e;}})()"
+    )
+    while time.time() < deadline:
+        msg_id += 1
+        try:
+            state = _evaluate(ws, msg_id, expression, timeout=2.0)
+        except CDPError:
+            state = None
+        if isinstance(state, str) and not state.startswith("ERR:"):
+            parts = state.split("|")
+            if len(parts) >= 3 and parts[1] == "complete" and parts[2] == "object":
+                current = _host_of(parts[0])
+                if not host or current == host or current.endswith(f".{host}") or host.endswith(f".{current}"):
+                    return msg_id, True
+        time.sleep(0.25)
+    return msg_id, False
+
+
 def apply_login(
     host: str,
     *,
@@ -268,14 +296,34 @@ def apply_login(
 
     msg_id = 0
     try:
+        # Page/Runtime 只启用一次；后续等待页面就绪、写 localStorage、刷新都复用
+        try:
+            msg_id += 1
+            _call(ws, msg_id, "Page.enable", timeout=timeout)
+        except CDPError:
+            pass
+        msg_id += 1
+        _call(ws, msg_id, "Runtime.enable", timeout=timeout)
+
         if cookie_params:
             msg_id += 1
             _call(ws, msg_id, "Network.enable", timeout=timeout)
             msg_id += 1
             _call(ws, msg_id, "Network.setCookies", {"cookies": cookie_params}, timeout=timeout)
+
         if storage_items:
-            msg_id += 1
-            _call(ws, msg_id, "Runtime.enable", timeout=timeout)
+            msg_id, ready = _wait_page_ready(ws, msg_id, host, timeout=max(timeout, 15.0))
+            if not ready:
+                # 标签页可能仍停在 about:blank / 导航中：主动导航到站点后再等一次
+                try:
+                    msg_id += 1
+                    _call(ws, msg_id, "Page.navigate", {"url": f"https://{host}/"}, timeout=timeout)
+                except CDPError as exc:
+                    logger.warning("导航 %s 标签页失败：%s", host, exc)
+                msg_id, ready = _wait_page_ready(ws, msg_id, host, timeout=max(timeout, 15.0))
+            if not ready:
+                raise CDPError(f"{host} 标签页尚未加载完成，请稍后重试（登录态未写入）")
+
             payload = json.dumps(storage_items, ensure_ascii=False)
             expression = (
                 "(function(){try{var d="
@@ -283,16 +331,21 @@ def apply_login(
                 + ";for(var k in d){if(Object.prototype.hasOwnProperty.call(d,k))"
                 + "{localStorage.setItem(k,d[k]);}}return true;}catch(e){return 'ERR:'+e;}})()"
             )
-            msg_id += 1
-            outcome = _evaluate(ws, msg_id, expression, timeout)
-            if isinstance(outcome, str) and outcome.startswith("ERR:"):
-                raise CDPError(f"写入 localStorage 失败：{outcome[4:]}")
-        if reload:
-            try:
+            last_error = ""
+            for _ in range(12):
                 msg_id += 1
-                _call(ws, msg_id, "Page.enable", timeout=timeout)
-            except CDPError:
-                pass
+                try:
+                    outcome = _evaluate(ws, msg_id, expression, timeout)
+                except CDPError as exc:
+                    outcome = f"ERR:{exc}"
+                if outcome is True:
+                    last_error = ""
+                    break
+                last_error = str(outcome)
+                time.sleep(0.5)
+            if last_error:
+                raise CDPError(f"写入 localStorage 失败：{last_error[4:] if last_error.startswith('ERR:') else last_error}")
+        if reload:
             try:
                 msg_id += 1
                 _call(ws, msg_id, "Page.reload", {"ignoreCache": True}, timeout=timeout)

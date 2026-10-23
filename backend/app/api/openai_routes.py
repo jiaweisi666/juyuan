@@ -70,8 +70,6 @@ async def chat_completions(
 @router.get("/v1/models")
 async def list_models(auth: AuthContext = Depends(require_api_key)) -> ModelsResponse:
     cards: list[ModelCard] = []
-    if auth.allows("auto"):
-        cards.append(ModelCard(id="auto", owned_by="juyuan"))
     for model in all_known_models():
         if not auth.allows(model):
             continue

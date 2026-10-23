@@ -106,16 +106,24 @@ class Gateway:
             "tools": request.tools,
             "tool_choice": request.tool_choice,
             "conversation_id": request.conversation_id,
+            "new_conversation": request.new_conversation,
         }
+        completed = False
+        saw_content = False
         try:
             async for delta in plugin.chat(messages, model_ref, stream=request.stream, **options):
+                # 结束块代表本次调用成功；先记下，确保 finally 释放账号凭证。
+                if delta.finished:
+                    completed = True
+                if delta.content or delta.reasoning:
+                    saw_content = True
                 yield delta
-        except PlatformError:
-            await self._pool.release(lease, success=False)
-            raise
-        else:
-            await self._pool.release(lease, success=True)
         finally:
+            # 关键：调用方（stream/complete）在收到 finished 后会 break，
+            # 生成器被提前关闭时不会走 else 分支 —— 必须在 finally 释放，
+            # 否则信号量/账号凭证永久泄漏，后续请求会一直排队到超时。
+            # 有正文/推理输出也视为成功，避免正常流结束后误把账号打入冷却。
+            await self._pool.release(lease, success=completed or saw_content)
             logger.debug("调用完成 platform=%s variant=%s", decision.platform, decision.variant)
 
     async def stream(

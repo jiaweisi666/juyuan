@@ -1,0 +1,310 @@
+diff --git a/app/api/chat.py b/app/api/chat.py
+index d27e729..d3e6676 100644
+--- a/app/api/chat.py
++++ b/app/api/chat.py
+@@ -87,6 +87,12 @@ from app.utils.site_url import route_domain_matches
+ logger = get_logger("API.CHAT")
+ 
+ router = APIRouter()
++
++
++def _force_new_conversation_from_request(request: Request) -> bool:
++    """聚元网关首轮会话标记：本轮在网页端点击「新建对话」。"""
++    raw = str(request.headers.get("x-juyuan-new-conversation") or "").strip().lower()
++    return raw in {"1", "true", "yes", "y", "on"}
+ MODEL_LIST_CREATED = int(time.time())
+ STREAM_QUEUE_POLL_TIMEOUT = 0.5
+ SSE_HEARTBEAT_INTERVAL = 5.0
+@@ -2511,6 +2517,7 @@ async def _stream_with_lifecycle(
+                     stop_checker=ctx.should_stop,
+                     requested_model=body.model,
+                     **({"workflow_variables": body.workflow_variables} if body.workflow_variables else {}),
++                    force_new_conversation=_force_new_conversation_from_request(request),
+                 )
+ 
+                 for chunk in gen:
+diff --git a/app/api/tab_routes.py b/app/api/tab_routes.py
+index 9da488f..3fb1b1b 100644
+--- a/app/api/tab_routes.py
++++ b/app/api/tab_routes.py
+@@ -98,6 +98,12 @@ router = APIRouter()
+ MODEL_LIST_CREATED = int(time.time())
+ 
+ 
++def _force_new_conversation_from_request(request: Request) -> bool:
++    """聚元网关首轮会话标记：本轮在网页端点击「新建对话」。"""
++    raw = str(request.headers.get("x-juyuan-new-conversation") or "").strip().lower()
++    return raw in {"1", "true", "yes", "y", "on"}
++
++
+ def _reset_stream_request_context(request_context_token: Any) -> None:
+     """Reset request logging context when the streaming generator owns its Context.
+ 
+@@ -2977,6 +2983,7 @@ async def _stream_with_tab_index(
+                     stop_checker=ctx.should_stop,
+                     requested_model=body.model,
+                     **({"workflow_variables": body.workflow_variables} if body.workflow_variables else {}),
++                    force_new_conversation=_force_new_conversation_from_request(request),
+                 )
+ 
+                 for chunk in gen:
+@@ -3306,6 +3313,7 @@ async def _stream_with_route_domain(
+                         allocation_mode=allocation_mode,
+                         requested_model=body.model,
+                         **({"workflow_variables": body.workflow_variables} if body.workflow_variables else {}),
++                        force_new_conversation=_force_new_conversation_from_request(request),
+                     )
+                 else:
+                     gen = browser.execute_workflow_for_route_domain(
+@@ -3318,6 +3326,7 @@ async def _stream_with_route_domain(
+                         allocation_mode=allocation_mode,
+                         requested_model=body.model,
+                         **({"workflow_variables": body.workflow_variables} if body.workflow_variables else {}),
++                        force_new_conversation=_force_new_conversation_from_request(request),
+                     )
+ 
+                 for chunk in gen:
+@@ -3655,6 +3664,7 @@ async def _stream_with_exact_url(
+                     resolved_tab_index=resolved_tab_index,
+                     requested_model=body.model,
+                     **({"workflow_variables": body.workflow_variables} if body.workflow_variables else {}),
++                    force_new_conversation=_force_new_conversation_from_request(request),
+                 )
+ 
+                 for chunk in gen:
+diff --git a/app/core/browser/workflow.py b/app/core/browser/workflow.py
+index 74a425b..417bb62 100644
+--- a/app/core/browser/workflow.py
++++ b/app/core/browser/workflow.py
+@@ -482,6 +482,7 @@ class BrowserWorkflowMixin:
+         allow_media_postprocess: bool = True,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+     ) -> Generator[str, None, None]:
+         """
+         工作流执行入口（v2.0 改进版）
+@@ -537,6 +538,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+             else:
+                 yield from self._execute_workflow_non_stream(
+@@ -547,6 +549,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+         
+         finally:
+@@ -574,6 +577,7 @@ class BrowserWorkflowMixin:
+         allow_media_postprocess: bool = True,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+     ) -> Generator[str, None, None]:
+         """使用指定编号的标签页执行工作流"""
+         is_valid, error_msg, sanitized_messages = MessageValidator.validate(messages)
+@@ -624,6 +628,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+             else:
+                 yield from self._execute_workflow_non_stream(
+@@ -635,6 +640,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+         
+         finally:
+@@ -663,6 +669,7 @@ class BrowserWorkflowMixin:
+         allocation_mode: Optional[str] = None,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+     ) -> Generator[str, None, None]:
+         """使用指定域名路由匹配的标签页执行工作流。"""
+         is_valid, error_msg, sanitized_messages = MessageValidator.validate(messages)
+@@ -737,6 +744,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+             else:
+                 yield from self._execute_workflow_non_stream(
+@@ -748,6 +756,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+ 
+         finally:
+@@ -776,6 +785,7 @@ class BrowserWorkflowMixin:
+         allocation_mode: Optional[str] = None,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+     ) -> Generator[str, None, None]:
+         """Execute a workflow on an atomically acquired route-group member."""
+         is_valid, error_msg, sanitized_messages = MessageValidator.validate(messages)
+@@ -840,6 +850,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+             else:
+                 yield from self._execute_workflow_non_stream(
+@@ -851,6 +862,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+         finally:
+             if session:
+@@ -878,6 +890,7 @@ class BrowserWorkflowMixin:
+         resolved_tab_index: Optional[int] = None,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+     ) -> Generator[str, None, None]:
+         """使用标签页完整 URL 严格匹配的唯一标签页执行工作流。"""
+         is_valid, error_msg, sanitized_messages = MessageValidator.validate(messages)
+@@ -969,6 +982,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+             else:
+                 yield from self._execute_workflow_non_stream(
+@@ -980,6 +994,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                 )
+ 
+         finally:
+@@ -1101,6 +1116,7 @@ class BrowserWorkflowMixin:
+         allow_media_postprocess: bool = True,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+         _prepared_prompt: Optional[str] = None,
+         _skip_chunk_planning: bool = False,
+         _chunk_continuation: bool = False,
+@@ -1126,6 +1142,7 @@ class BrowserWorkflowMixin:
+                         allow_media_postprocess=(allow_media_postprocess if is_final_chunk else False),
+                         requested_model=requested_model,
+                         **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                        force_new_conversation=force_new_conversation and chunk.index == 1,
+                         _prepared_prompt=chunk.prompt,
+                         _skip_chunk_planning=True,
+                         _chunk_continuation=chunk.index > 1,
+@@ -1172,6 +1189,7 @@ class BrowserWorkflowMixin:
+                     allow_media_postprocess=allow_media_postprocess,
+                     requested_model=requested_model,
+                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++                    force_new_conversation=force_new_conversation,
+                     _prepared_prompt=_prepared_prompt,
+                     _chunk_continuation=_chunk_continuation,
+                     _include_message_images=_include_message_images,
+@@ -1589,6 +1607,7 @@ class BrowserWorkflowMixin:
+         allow_media_postprocess: bool = True,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+         _prepared_prompt: Optional[str] = None,
+         _chunk_continuation: bool = False,
+         _include_message_images: bool = True,
+@@ -1717,19 +1736,27 @@ class BrowserWorkflowMixin:
+         if has_control_flow(workflow):
+             validate_workflow(workflow)
+         stealth_mode = site_config.get("stealth", False)
+-        force_new_conversation = bool(BrowserConstants.get("FORCE_NEW_CONVERSATION"))
++        config_force_new = bool(BrowserConstants.get("FORCE_NEW_CONVERSATION"))
+         conversation_threshold = self._get_conversation_timeout_threshold()
+         skip_new_chat = not session.should_start_new_conversation(
+             current_domain=domain,
+             preset_name=resolved_preset_name,
+             threshold_seconds=conversation_threshold,
+-            force_new=force_new_conversation,
++            force_new=config_force_new,
+         )
+         advanced_config = config_engine.get_site_advanced_config(
+             domain,
+             preset_name=resolved_preset_name,
+         )
+         workflow_attempt = int(getattr(session, "_workflow_attempt", 0) or 0)
++        # 聚元网关在「新会话首轮」显式要求新建网页对话；后续轮次不带该标记，
++        # 由上面的复用判定保持同一网页对话。
++        if force_new_conversation and workflow_attempt == 0 and not _chunk_continuation:
++            skip_new_chat = False
++            logger.info(
++                f"[{session.id}] 收到聚元新会话标记，本轮新建网页对话: "
++                f"domain={domain}, preset={resolved_preset_name}"
++            )
+         skip_new_chat_on_retry = bool(advanced_config.get("skip_new_chat_on_retry", False))
+         retry_skip_new_chat = workflow_attempt > 0 and skip_new_chat_on_retry
+         if retry_skip_new_chat:
+@@ -1821,7 +1848,7 @@ class BrowserWorkflowMixin:
+ 
+         if retry_skip_new_chat:
+             logger.debug(f"[{session.id}] 重试轮跳过新建对话优先于本轮新建判定")
+-        elif force_new_conversation:
++        elif config_force_new:
+             logger.debug(f"[{session.id}] 已启用强制新建对话")
+         elif skip_new_chat:
+             logger.debug(
+@@ -2853,6 +2880,7 @@ class BrowserWorkflowMixin:
+         allow_media_postprocess: bool = True,
+         requested_model: Optional[str] = None,
+         workflow_variables: Optional[Dict[str, Any]] = None,
++        force_new_conversation: bool = False,
+     ) -> Generator[str, None, None]:
+         """非流式工作流执行"""
+         collected_content = []
+@@ -2868,6 +2896,7 @@ class BrowserWorkflowMixin:
+             allow_media_postprocess=allow_media_postprocess,
+             requested_model=requested_model,
+             **({"workflow_variables": workflow_variables} if workflow_variables else {}),
++            force_new_conversation=force_new_conversation,
+         )
+ 
+         try:
+diff --git a/app/core/tab_pool_parts/session.py b/app/core/tab_pool_parts/session.py
+index 3ae004f..ba8cfb0 100644
+--- a/app/core/tab_pool_parts/session.py
++++ b/app/core/tab_pool_parts/session.py
+@@ -768,8 +768,6 @@ class TabSession:
+ 
+         if force_new:
+             reason = "force_new_enabled"
+-        elif threshold_value <= 0:
+-            reason = "threshold_disabled_reuse"
+         elif not normalized_domain:
+             reason = "missing_current_domain"
+         elif not last_activity_at:
+@@ -778,6 +776,11 @@ class TabSession:
+             reason = "domain_changed"
+         elif normalized_preset and last_preset and normalized_preset != last_preset:
+             reason = "preset_changed"
++        elif threshold_value <= 0:
++            # 阈值为 0 的语义是「不按时间自动新开」，即复用当前对话。
++            # 旧实现这里仍保持 will_start_new=True，导致每一轮都点「新建对话」。
++            will_start_new = False
++            reason = "threshold_disabled_reuse"
+         elif elapsed_seconds is not None and elapsed_seconds < threshold_value:
+             will_start_new = False
+             reason = "reuse_existing"

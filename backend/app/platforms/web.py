@@ -62,10 +62,14 @@ class WebPlatformPlugin(PlatformPlugin):
         info = variants.get(variant) or {}
         return str(info.get("base_model") or variant or self.platform_id)
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, *, force_new_conversation: bool = False) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self._settings.base_web_api_key:
             headers["Authorization"] = f"Bearer {self._settings.base_web_api_key}"
+        if force_new_conversation:
+            # 底座据此在网页端点击「新建对话」；仅聚元会话首轮发送，
+            # 后续轮次复用同一网页对话，避免每轮都新开。
+            headers["X-Juyuan-New-Conversation"] = "1"
         return headers
 
     def _payload(self, messages: list[ChatMessage], stream: bool, options: dict[str, Any]) -> dict[str, Any]:
@@ -99,6 +103,7 @@ class WebPlatformPlugin(PlatformPlugin):
         **options: Any,
     ) -> AsyncGenerator[StreamDelta, None]:
         conversation_id = options.pop("conversation_id", None)
+        force_new_conversation = bool(options.pop("new_conversation", False))
         tab_index = None
         if conversation_id:
             tab_index = self._conversation_tab_index.get(conversation_id)
@@ -110,14 +115,18 @@ class WebPlatformPlugin(PlatformPlugin):
         try:
             if stream:
                 resolved_tab_index = None
-                async for delta in self._stream_chat(payload, tab_index=tab_index):
+                async for delta in self._stream_chat(
+                    payload, tab_index=tab_index, force_new_conversation=force_new_conversation
+                ):
                     if delta.finished and delta.metadata and delta.metadata.get("tab_index") is not None:
                         resolved_tab_index = delta.metadata["tab_index"]
                     yield delta
                 if conversation_id and resolved_tab_index is not None:
                     self._conversation_tab_index[conversation_id] = resolved_tab_index
                 return
-            result, resolved_tab_index = await self._nonstream_chat(payload, tab_index=tab_index)
+            result, resolved_tab_index = await self._nonstream_chat(
+                payload, tab_index=tab_index, force_new_conversation=force_new_conversation
+            )
             result.latency_ms = int((time.perf_counter() - start) * 1000)
             if conversation_id and resolved_tab_index is not None:
                 self._conversation_tab_index[conversation_id] = resolved_tab_index
@@ -141,6 +150,7 @@ class WebPlatformPlugin(PlatformPlugin):
             if tab_index and exc.response.status_code == 404:
                 # 标签页可能已关闭，清除映射后回退到通用端点重试
                 self._conversation_tab_index.pop(conversation_id, None)
+                options["new_conversation"] = force_new_conversation
                 async for delta in self.chat(messages, model, stream=stream, conversation_id=conversation_id, **options):
                     yield delta
                 return
@@ -156,9 +166,19 @@ class WebPlatformPlugin(PlatformPlugin):
             async for delta in self._mock.chat(messages, model, stream=stream, **options):
                 yield delta
 
-    async def _nonstream_chat(self, payload: dict[str, Any], tab_index: int | None = None) -> tuple[ChatResult, int | None]:
+    async def _nonstream_chat(
+        self,
+        payload: dict[str, Any],
+        tab_index: int | None = None,
+        *,
+        force_new_conversation: bool = False,
+    ) -> tuple[ChatResult, int | None]:
         endpoint = f"/tab/{tab_index}/v1/chat/completions" if tab_index else "/v1/chat/completions"
-        resp = await self._client.post(endpoint, json=payload, headers=self._headers())
+        resp = await self._client.post(
+            endpoint,
+            json=payload,
+            headers=self._headers(force_new_conversation=force_new_conversation),
+        )
         resp.raise_for_status()
         data = resp.json()
         content = ""
@@ -183,9 +203,20 @@ class WebPlatformPlugin(PlatformPlugin):
             raw=data,
         ), resolved_tab_index
 
-    async def _stream_chat(self, payload: dict[str, Any], tab_index: int | None = None) -> AsyncGenerator[StreamDelta, None]:
+    async def _stream_chat(
+        self,
+        payload: dict[str, Any],
+        tab_index: int | None = None,
+        *,
+        force_new_conversation: bool = False,
+    ) -> AsyncGenerator[StreamDelta, None]:
         endpoint = f"/tab/{tab_index}/v1/chat/completions" if tab_index else "/v1/chat/completions"
-        async with self._client.stream("POST", endpoint, json=payload, headers=self._headers()) as resp:
+        async with self._client.stream(
+            "POST",
+            endpoint,
+            json=payload,
+            headers=self._headers(force_new_conversation=force_new_conversation),
+        ) as resp:
             resp.raise_for_status()
 
             resolved_tab_index = None

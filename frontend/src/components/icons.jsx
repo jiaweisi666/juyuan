@@ -216,6 +216,13 @@ export const ShieldIcon = (p) => (
   </Icon>
 )
 
+export const ShieldCheckIcon = (p) => (
+  <Icon {...p}>
+    <path d="M12 3 5 5.8v5.9c0 4.3 2.9 7.4 7 8.8 4.1-1.4 7-4.5 7-8.8V5.8z" />
+    <path d="m8.8 11.8 2.2 2.2 4.2-4.2" />
+  </Icon>
+)
+
 export const ThumbUpIcon = (p) => (
   <Icon {...p}>
     <path d="M7 21V10.5l3.5-6.2a1.6 1.6 0 0 1 2.9 1.2L12.5 9H19a2 2 0 0 1 1.96 2.4l-1.2 6A2 2 0 0 1 17.8 19H7z" />
@@ -243,6 +250,14 @@ export const SetupIcon = (p) => (
     <path d="M4 7h16" />
     <path d="M4 12h16" />
     <path d="M4 17h16" />
+  </Icon>
+)
+
+export const SparklesIcon = (p) => (
+  <Icon {...p}>
+    <path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1L6.5 8.5l4.1-1.4z" />
+    <path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />
+    <path d="m5 15 .7 1.8L7.5 17.5l-1.8.7L5 20l-.7-1.8L2.5 17.5l1.8-.7z" />
   </Icon>
 )
 

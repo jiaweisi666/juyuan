@@ -92,6 +92,9 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Any | None = None
     user: str | None = None
     conversation_id: str | None = None
+    # 内部扩展：本轮是否要在网页端「新建对话」（由聚元会话首轮/用户点「新对话」触发）。
+    # 第三方 API 不传时默认复用当前网页对话，避免每轮都新开。
+    new_conversation: bool = False
 
     model_config = {"extra": "allow"}
 

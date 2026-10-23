@@ -44,11 +44,10 @@ def load_platform_definitions() -> list[dict[str, Any]]:
         for variant, info in overlay.get("variants", {}).items():
             variants.setdefault(variant, info)
         item["variants"] = variants
-        models = list(definition.get("models", []))
-        for model in overlay.get("models", []):
-            if model not in models:
-                models.append(model)
-        item["models"] = models
+        # 只暴露 platforms.json 中正式声明的模型。
+        # 底座 /v1/models 会返回 chat.deepseek.com / www.chat.deepseek.com 这类「站点名」，
+        # 它们不是可调用模型，不能混入前端的模型清单。
+        item["models"] = list(definition.get("models", []))
         merged.append(item)
     return merged
 

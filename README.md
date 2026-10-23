@@ -137,6 +137,12 @@ cd juyuan
 git clone https://github.com/lumingya/universal-web-api.git vendor/universal-web-api
 ```
 
+> 本项目的补丁基于底座 **v3.0.0（commit `29d9685`）** 验证。若上游已更新且补丁无法应用，可先切到该版本：
+>
+> ```powershell
+> git -C vendor/universal-web-api checkout 29d9685
+> ```
+
 ---
 
 ### 第 3 步：应用聚元底座补丁（重要）

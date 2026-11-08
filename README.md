@@ -147,10 +147,11 @@ git clone https://github.com/lumingya/universal-web-api.git vendor/universal-web
 
 ### 第 3 步：应用聚元底座补丁（重要）
 
-底座需要两个本地补丁：
+底座需要三个本地补丁：
 
 1. 阈值为 0 时复用当前网页对话，而不是每轮新建；
-2. 支持聚元首轮会话的「新建对话」标记。
+2. 支持聚元首轮会话的「新建对话」标记；
+3. 兼容 DeepSeek 当前无 `o` 操作符的 `response/fragments` 快照，正确提取正式回复并忽略思考片段。
 
 在**项目根目录**执行：
 
@@ -164,12 +165,13 @@ git -C vendor/universal-web-api apply ../../patches/universal-web-api-juyuan.pat
 git -C vendor/universal-web-api status --short
 ```
 
-应看到以下 4 个文件被修改：
+应看到以下 5 个文件被修改：
 
 ```text
  M app/api/chat.py
  M app/api/tab_routes.py
  M app/core/browser/workflow.py
+ M app/core/parsers/deepseek_parser.py
  M app/core/tab_pool_parts/session.py
 ```
 
